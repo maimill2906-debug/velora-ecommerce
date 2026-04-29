@@ -163,8 +163,8 @@ type AdminProduct = {
   original_price: number | null;
   rating_avg: number | null;
   review_count: number;
-  variants: Array<{ id: string; size: string | null; color: string | null; price: number }>;
-  images: Array<{ url: string }>;
+  variants: Array<{ id: string; variant_sku: string; size: string | null; color: string | null; price: number }>;
+  images: Array<{ id: string; url: string; sort_order: number }>;
 };
 
 const fmtVnd = (n: number | null | undefined) => `${Number(n || 0).toLocaleString("vi-VN")}₫`;
@@ -178,6 +178,11 @@ const ProductManagementPage = () => {
   const [filterStatus, setFilterStatus] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [detail, setDetail] = useState<AdminProduct | null>(null);
+  const [addingVariant, setAddingVariant] = useState(false);
+  const [addingImage, setAddingImage] = useState(false);
+  const [variantForm, setVariantForm] = useState({ size: "M", color: "Đen", price: "" });
+  const [imageForm, setImageForm] = useState({ url: "", sort_order: "0" });
   const [form, setForm] = useState({
     sku: "",
     name: "",
@@ -211,6 +216,67 @@ const ProductManagementPage = () => {
   useEffect(() => {
     reload();
   }, []);
+
+  const openDetail = (p: AdminProduct) => {
+    setDetail(p);
+    setVariantForm({ size: "M", color: "Đen", price: "" });
+    setImageForm({ url: "", sort_order: "0" });
+  };
+
+  const addVariant = async () => {
+    if (!detail) return;
+    const price = Number(variantForm.price || 0);
+    if (!variantForm.size.trim() || !variantForm.color.trim() || !price) {
+      toast.error("Vui lòng nhập size/màu/giá");
+      return;
+    }
+    setAddingVariant(true);
+    try {
+      await apiFetch(`/catalog/products/${detail.id}/variants`, {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({
+          variant_sku: `${detail.sku}-${variantForm.size}-${variantForm.color}`,
+          size: variantForm.size.trim(),
+          color: variantForm.color.trim(),
+          price,
+        }),
+      });
+      toast.success("Đã thêm biến thể");
+      setVariantForm({ size: "M", color: "Đen", price: "" });
+      reload();
+    } catch (e: any) {
+      toast.error(`Không thêm được biến thể: ${e?.message || ""}`);
+    } finally {
+      setAddingVariant(false);
+    }
+  };
+
+  const addImage = async () => {
+    if (!detail) return;
+    if (!imageForm.url.trim()) {
+      toast.error("Vui lòng nhập URL ảnh");
+      return;
+    }
+    setAddingImage(true);
+    try {
+      await apiFetch(`/catalog/products/${detail.id}/images`, {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({
+          url: imageForm.url.trim(),
+          sort_order: Number(imageForm.sort_order || 0),
+        }),
+      });
+      toast.success("Đã thêm ảnh");
+      setImageForm({ url: "", sort_order: "0" });
+      reload();
+    } catch (e: any) {
+      toast.error(`Không thêm được ảnh: ${e?.message || ""}`);
+    } finally {
+      setAddingImage(false);
+    }
+  };
 
   const catNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -350,7 +416,7 @@ const ProductManagementPage = () => {
         <div style={{ padding: 40, textAlign: "center", color: "#888" }}>Đang tải dữ liệu...</div>
       ) : (
         <Table
-          headers={["SKU", "TÊN SẢN PHẨM", "DANH MỤC", "BIẾN THỂ", "GIÁ BÁN", "ĐÁNH GIÁ", "TRẠNG THÁI"]}
+          headers={["SKU", "TÊN SẢN PHẨM", "DANH MỤC", "BIẾN THỂ", "GIÁ BÁN", "ĐÁNH GIÁ", "TRẠNG THÁI", ""]}
           rows={filtered.map((p) => {
             const sizes = Array.from(new Set((p.variants || []).map((v) => v.size).filter(Boolean))) as string[];
             const prices = (p.variants || []).map((v) => v.price).filter((x) => typeof x === "number");
@@ -365,12 +431,142 @@ const ProductManagementPage = () => {
               priceText,
               p.review_count > 0 ? `${(p.rating_avg || 0).toFixed(1)} ★ (${p.review_count})` : "—",
               p.is_active ? <Badge label="Đang bán" color="green" /> : <Badge label="Tạm ngừng" color="yellow" />,
+              <Btn variant="secondary" onClick={() => openDetail(p)} style={{ padding: "6px 10px" }}>Chi tiết</Btn>,
             ];
           })}
         />
       )}
       {!loading && !filtered.length && (
         <div style={{ padding: 40, textAlign: "center", color: "#888" }}>Không có sản phẩm phù hợp.</div>
+      )}
+
+      {detail && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: 40,
+            zIndex: 9999,
+            overflow: "auto",
+          }}
+          onClick={() => setDetail(null)}
+        >
+          <div
+            style={{
+              width: "min(980px, 96vw)",
+              background: "#fff",
+              borderRadius: 0,
+              border: "1px solid #eee",
+              padding: 20,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#888", letterSpacing: 1.2, fontWeight: 700 }}>CHI TIẾT SẢN PHẨM</div>
+                <div style={{ fontSize: 18, fontWeight: 800, marginTop: 6 }}>{detail.name}</div>
+                <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
+                  {detail.sku} · {detail.category_id ? (catNameById.get(detail.category_id) || "—") : "—"}
+                </div>
+              </div>
+              <Btn variant="secondary" onClick={() => setDetail(null)}>Đóng</Btn>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 18 }}>
+              <div style={{ border: "1px solid #eee", padding: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, marginBottom: 10 }}>ẢNH SẢN PHẨM</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                  {(detail.images || []).length ? (detail.images || []).slice(0, 9).map((img) => (
+                    <div key={img.id} style={{ border: "1px solid #eee", background: "#fafafa", aspectRatio: "1/1", overflow: "hidden" }}>
+                      <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    </div>
+                  )) : (
+                    <div style={{ gridColumn: "1 / -1", color: "#999" }}>Chưa có ảnh</div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <input
+                    placeholder="URL ảnh (public)"
+                    value={imageForm.url}
+                    onChange={(e) => setImageForm((f) => ({ ...f, url: e.target.value }))}
+                    style={{ ...inputStyle, flex: 1 }}
+                  />
+                  <input
+                    placeholder="sort"
+                    type="number"
+                    value={imageForm.sort_order}
+                    onChange={(e) => setImageForm((f) => ({ ...f, sort_order: e.target.value }))}
+                    style={{ ...inputStyle, width: 90 }}
+                  />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Btn onClick={addImage} style={{ width: "100%" }}>{addingImage ? "Đang thêm..." : "Thêm ảnh"}</Btn>
+                </div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 10 }}>
+                  Gợi ý: upload lên Supabase Storage hoặc dùng link Unsplash.
+                </div>
+              </div>
+
+              <div style={{ border: "1px solid #eee", padding: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, marginBottom: 10 }}>BIẾN THỂ (SIZE / MÀU)</div>
+                <div style={{ maxHeight: 240, overflow: "auto", border: "1px solid #f1f1f1" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid #eee" }}>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, letterSpacing: 1 }}>SIZE</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, letterSpacing: 1 }}>MÀU</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, letterSpacing: 1 }}>GIÁ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(detail.variants || []).length ? (detail.variants || []).map((v) => (
+                        <tr key={v.id} style={{ borderBottom: "1px solid #f6f6f6" }}>
+                          <td style={{ padding: "8px 10px" }}>{v.size || "—"}</td>
+                          <td style={{ padding: "8px 10px" }}>{v.color || "—"}</td>
+                          <td style={{ padding: "8px 10px", fontWeight: 800 }}>{fmtVnd(v.price)}</td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={3} style={{ padding: "10px", color: "#999" }}>Chưa có biến thể</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
+                  <input
+                    placeholder="Size"
+                    value={variantForm.size}
+                    onChange={(e) => setVariantForm((f) => ({ ...f, size: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <input
+                    placeholder="Màu"
+                    value={variantForm.color}
+                    onChange={(e) => setVariantForm((f) => ({ ...f, color: e.target.value }))}
+                    style={inputStyle}
+                  />
+                  <input
+                    placeholder="Giá (VND)"
+                    type="number"
+                    value={variantForm.price}
+                    onChange={(e) => setVariantForm((f) => ({ ...f, price: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Btn onClick={addVariant} style={{ width: "100%" }}>{addingVariant ? "Đang thêm..." : "Thêm biến thể"}</Btn>
+                </div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 10 }}>
+                  SKU biến thể tự tạo: <b>{detail.sku}-SIZE-MÀU</b>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

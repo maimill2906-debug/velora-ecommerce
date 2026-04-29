@@ -1,0 +1,99 @@
+import { createBrowserRouter } from "react-router";
+import { HomePage } from "./pages/HomePage";
+import { ShopPage } from "./pages/ShopPage";
+import { ProductDetailPage } from "./pages/ProductDetailPage";
+import { CartPage } from "./pages/CartPage";
+import { CheckoutPage } from "./pages/CheckoutPage";
+import { AdminDashboard } from "./pages/AdminDashboard";
+import { AboutPage } from "./pages/AboutPage";
+import { ContactPage } from "./pages/ContactPage";
+
+// VELORA FASHION Pages
+import { LoginPage } from "./pages/LoginPage";
+import { RegisterPage } from "./pages/RegisterPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { VeloraHomePage } from "./pages/VeloraHomePage";
+import { VeloraShopPage } from "./pages/VeloraShopPage";
+import { VeloraAdminDashboard } from "./pages/VeloraAdminDashboard";
+import { POSPage } from "./pages/POSPage";
+import { WarehousePage } from "./pages/WarehousePage";
+import { OrderTrackingPage } from "./pages/OrderTrackingPage";
+import { ProfilePage } from "./pages/ProfilePage";
+import MarketingPage from "./pages/MarketingPage";
+export const router = createBrowserRouter([
+  { path: "/marketing", element: <MarketingPage /> 
+  },
+  {
+    path: "/",
+    Component: VeloraHomePage,
+  },
+  {
+    path: "/login",
+    Component: LoginPage,
+  },
+  {
+    path: "/register",
+    Component: RegisterPage,
+  },
+  {
+    path: "/forgot-password",
+    Component: ForgotPasswordPage,
+  },
+  {
+    path: "/shop",
+    Component: VeloraShopPage,
+  },
+  {
+    path: "/product/:id",
+    Component: ProductDetailPage,
+  },
+  {
+    path: "/cart",
+    Component: CartPage,
+  },
+  {
+    path: "/checkout",
+    Component: CheckoutPage,
+  },
+  {
+    path: "/order-tracking",
+    Component: OrderTrackingPage,
+  },
+  {
+    path: "/profile",
+    Component: ProfilePage,
+  },
+  {
+    path: "/admin",
+    Component: VeloraAdminDashboard,
+  },
+  {
+    path: "/pos",
+    Component: POSPage,
+  },
+  {
+    path: "/warehouse",
+    Component: WarehousePage,
+  },
+  {
+    path: "/about",
+    Component: AboutPage,
+  },
+  {
+    path: "/contact",
+    Component: ContactPage,
+  },
+  // Legacy routes
+  {
+    path: "/old-home",
+    Component: HomePage,
+  },
+  {
+    path: "/old-shop",
+    Component: ShopPage,
+  },
+  {
+    path: "/old-admin",
+    Component: AdminDashboard,
+  },
+]);

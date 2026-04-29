@@ -1,0 +1,132 @@
+/* VELORA Logo Styles - Luxury Fashion Brand */
+
+.velora-logo-text {
+  font-family: 'Playfair Display', serif;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  color: #000000;
+  margin: 0;
+  padding: 0;
+  line-height: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Size variants */
+.velora-logo-small {
+  font-size: 1.5rem;
+  letter-spacing: 0.12em;
+}
+
+.velora-logo-medium {
+  font-size: 2.5rem;
+  letter-spacing: 0.13em;
+}
+
+.velora-logo-large {
+  font-size: 3.5rem;
+  letter-spacing: 0.15em;
+}
+
+/* Individual letter styling for custom signature feel */
+.velora-logo-text span {
+  display: inline-block;
+  transition: all 0.3s ease;
+}
+
+/* Stylized O - The signature element */
+.velora-o {
+  font-style: italic;
+  font-weight: 300;
+  position: relative;
+  top: -2px;
+  transform: scale(1.15);
+  margin: 0 0.02em;
+}
+
+/* V - Strong opening */
+.velora-v {
+  font-weight: 300;
+  letter-spacing: 0.05em;
+}
+
+/* E - Refined */
+.velora-e {
+  font-weight: 300;
+}
+
+/* L - Elegant */
+.velora-l {
+  font-weight: 300;
+}
+
+/* R - Refined */
+.velora-r {
+  font-weight: 300;
+}
+
+/* A - Strong ending */
+.velora-a {
+  font-weight: 300;
+}
+
+/* Subtle underline */
+.velora-logo-underline {
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(0, 0, 0, 0.3) 20%,
+    rgba(0, 0, 0, 0.3) 80%,
+    transparent
+  );
+  margin: 1rem auto 0;
+}
+
+/* Subtitle */
+.velora-logo-subtitle {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 300;
+  letter-spacing: 0.35em;
+  color: rgba(0, 0, 0, 0.5);
+  margin-top: 1rem;
+  text-transform: uppercase;
+}
+
+/* Responsive sizing */
+@media (max-width: 768px) {
+  .velora-logo-text {
+    font-size: 2.5rem;
+    letter-spacing: 0.12em;
+  }
+
+  .velora-logo-subtitle {
+    font-size: 0.5rem;
+    letter-spacing: 0.3em;
+  }
+}
+
+@media (max-width: 480px) {
+  .velora-logo-text {
+    font-size: 2rem;
+    letter-spacing: 0.1em;
+  }
+
+  .velora-logo-subtitle {
+    font-size: 0.45rem;
+    letter-spacing: 0.25em;
+  }
+}
+
+/* Hover effect for interactive contexts */
+.velora-logo-interactive:hover .velora-logo-text {
+  letter-spacing: 0.18em;
+}
+
+.velora-logo-interactive:hover .velora-o {
+  transform: scale(1.2) rotate(-5deg);
+}

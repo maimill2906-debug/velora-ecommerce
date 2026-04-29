@@ -506,17 +506,11 @@ export default function MarketingPage() {
   const tabs = [
     { id: "campaigns", label: "📣 Chiến dịch" },
     { id: "vouchers", label: "🎫 Voucher" },
-    { id: "email", label: "📧 Email & SMS (demo)" },
-    { id: "social", label: "📱 Social Media (demo)" },
-    { id: "analytics", label: "📊 Phân tích (demo)" },
   ];
 
   const tabContent: Record<string, JSX.Element> = {
     campaigns: <CampaignsTab />,
     vouchers: <VouchersTab />,
-    email: <EmailSMSTab />,
-    social: <SocialMediaTab />,
-    analytics: <MarketingAnalyticsTab />,
   };
 
   return (
@@ -524,7 +518,7 @@ export default function MarketingPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>Marketing</h1>
-          <p style={{ margin: "4px 0 0", color: "#888", fontSize: 13 }}>Quản lý chiến dịch và voucher VELORA (Email/Social/Analytics đang ở chế độ demo)</p>
+          <p style={{ margin: "4px 0 0", color: "#888", fontSize: 13 }}>Quản lý chiến dịch và voucher VELORA</p>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import { toast } from "sonner";
+import { getSupabaseClient, getSupabaseConfig } from "@/lib/supabaseClient";
 
 // ============================================================
 // SHARED COMPONENTS
@@ -181,6 +182,8 @@ const ProductManagementPage = () => {
   const [detail, setDetail] = useState<AdminProduct | null>(null);
   const [addingVariant, setAddingVariant] = useState(false);
   const [addingImage, setAddingImage] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [variantForm, setVariantForm] = useState({ size: "M", color: "Đen", price: "" });
   const [imageForm, setImageForm] = useState({ url: "", sort_order: "0" });
   const [form, setForm] = useState({
@@ -221,6 +224,43 @@ const ProductManagementPage = () => {
     setDetail(p);
     setVariantForm({ size: "M", color: "Đen", price: "" });
     setImageForm({ url: "", sort_order: "0" });
+    setImageFile(null);
+  };
+
+  const uploadImageToStorage = async () => {
+    if (!detail) return;
+    if (!imageFile) {
+      toast.error("Vui lòng chọn file ảnh");
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const cfg = getSupabaseConfig();
+      const supabase = getSupabaseClient();
+      const safeName = String(imageFile.name || "image").replace(/[^a-zA-Z0-9._-]+/g, "_");
+      const path = `products/${detail.id}/${Date.now()}-${safeName}`;
+
+      const { error } = await supabase.storage
+        .from(cfg.bucket)
+        .upload(path, imageFile, { upsert: false, contentType: imageFile.type || "image/*" });
+      if (error) throw new Error(error.message || "upload_failed");
+
+      const pub = supabase.storage.from(cfg.bucket).getPublicUrl(path);
+      const publicUrl = pub?.data?.publicUrl || "";
+      if (!publicUrl) throw new Error("upload_failed");
+
+      setImageForm((f) => ({ ...f, url: publicUrl }));
+      toast.success("Đã upload ảnh");
+    } catch (e: any) {
+      const msg = e?.message || "Upload ảnh thất bại";
+      if (msg === "supabase_not_configured") {
+        toast.error("Chưa cấu hình Supabase Storage (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)");
+      } else {
+        toast.error(msg);
+      }
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const addVariant = async () => {
@@ -503,11 +543,19 @@ const ProductManagementPage = () => {
                     style={{ ...inputStyle, width: 90 }}
                   />
                 </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setImageFile((e.target as HTMLInputElement).files?.[0] || null)}
+                    style={{ ...inputStyle, flex: 1, padding: "6px 10px" }}
+                  />
+                  <Btn variant="secondary" onClick={uploadImageToStorage} style={{ whiteSpace: "nowrap" }}>
+                    {uploadingImage ? "Đang upload..." : "Upload"}
+                  </Btn>
+                </div>
                 <div style={{ marginTop: 10 }}>
                   <Btn onClick={addImage} style={{ width: "100%" }}>{addingImage ? "Đang thêm..." : "Thêm ảnh"}</Btn>
-                </div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 10 }}>
-                  Gợi ý: upload lên Supabase Storage hoặc dùng link Unsplash.
                 </div>
               </div>
 

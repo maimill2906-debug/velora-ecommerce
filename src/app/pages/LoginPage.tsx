@@ -217,34 +217,6 @@ export function LoginPage() {
           </TabsContent>
         </Tabs>
 
-        {/* Divider */}
-        <div className="flex items-center gap-4 my-8">
-          <Separator className="flex-1" />
-          <span className="text-sm text-muted-foreground">HOẶC</span>
-          <Separator className="flex-1" />
-        </div>
-
-        {/* Social Login */}
-        <div className="space-y-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full border-black hover:bg-black hover:text-white h-12"
-            onClick={() => handleSocialLogin('google')}
-          >
-            Đăng nhập với Google
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full border-black hover:bg-black hover:text-white h-12"
-            onClick={() => handleSocialLogin('facebook')}
-          >
-            Đăng nhập với Facebook
-          </Button>
-        </div>
-
         {/* Register Link */}
         <div className="text-center mt-8">
           <p className="text-sm text-muted-foreground">
@@ -253,64 +225,6 @@ export function LoginPage() {
               Đăng ký ngay
             </Link>
           </p>
-        </div>
-
-        {/* Quick Access for Demo */}
-        <div className="mt-12 pt-8 border-t border-border">
-          <p className="text-sm text-muted-foreground mb-4 text-center">
-            Truy cập nhanh (Demo):
-          </p>
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/')}
-                className="border-gray-300"
-              >
-                Trang chủ
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/admin')}
-                className="border-gray-300"
-              >
-                Admin
-              </Button>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/pos')}
-                className="border-gray-300"
-              >
-                POS
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/warehouse')}
-                className="border-gray-300"
-              >
-                Kho
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/marketing')}
-                className="border-gray-300"
-              >
-                Marketing
-              </Button>
-            </div>
-          </div>
         </div>
       </div>
 

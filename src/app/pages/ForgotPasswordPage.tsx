@@ -61,7 +61,6 @@ export function ForgotPasswordPage() {
       );
       setIdentifier(data.identifier);
       if (res.reset_token) {
-        // Dev/demo mode: backend returns the token so the user can paste it.
         setResetToken(res.reset_token);
         resetForm.setValue('token', res.reset_token);
         toast.success('Mã đặt lại đã được tạo. Hãy đặt mật khẩu mới bên dưới.');

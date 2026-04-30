@@ -10,3 +10,6 @@ venv/
 .env
 *.sqlite3
 *.db
+
+# Cursor IDE (local MCP / rules — không commit)
+.cursor/

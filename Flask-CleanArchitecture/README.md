@@ -44,60 +44,37 @@
 
 ## Infrastructure Layer
 
-## Download source code (CMD)
-    git clone https://github.com/ChienNguyensrdn/Flask-CleanArchitecture.git
-## Kiểm tra đã cài python đã cài đặt trên máy chưa
-    python --version
-## Run app
+## Chạy Backend (monorepo VELORA)
 
-## Chạy Backend (Flask) - VELORA
+Backend nằm trong repo VELORA tại thư mục `Flask-CleanArchitecture/`.
 
-### 1) Tạo môi trường ảo & cài dependencies
-Tại thư mục `Flask-CleanArchitecture/`:
-
-#### Windows (PowerShell)
 ```bash
+python --version
+cd Flask-CleanArchitecture
 py -m venv .venv
-   .venv\Scripts\activate.ps1
-pip install -r src\requirements.txt
-```
-
-> Nếu bị chặn activate venv:
-> `Set-ExecutionPolicy RemoteSigned -Force`
-
-#### macOS/Linux
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
+.venv\Scripts\activate.ps1
 pip install -r src/requirements.txt
-```
-
-### 2) Cấu hình biến môi trường
-Tạo file `.env` tại **`Flask-CleanArchitecture/src/.env`**:
-
-```bash
-# Flask settings
-FLASK_ENV=development
-SECRET_KEY=your_secret_key
-JWT_SECRET=your_jwt_secret
-
-# Supabase Postgres
-# (Khuyến nghị dùng connection string "Session/Shared Pooler" nếu mạng IPv4)
-DATABASE_URI="postgresql+psycopg2://USER:PASSWORD@HOST:5432/DBNAME"
-```
-
-### 3) Chạy server
-Chạy từ **`Flask-CleanArchitecture/src/`**:
-
-```bash
 cd src
 python app.py
 ```
+
+Trên Linux/macOS: `source .venv/bin/activate` thay cho bước kích hoạt `.ps1`.
+
+
 
 Mặc định:
 - API: `http://localhost:9999`
 - Swagger UI: `http://localhost:9999/docs`
 - Swagger JSON: `http://localhost:9999/swagger.json`
+
+### Bootstrap admin đầu tiên (RBAC)
+
+1. Đặt biến môi trường `BOOTSTRAP_TOKEN` (ví dụ trong `.env` hoặc shell trước khi chạy `app.py`).
+2. Đăng ký user qua `POST /auth/register` với email hoặc phone và mật khẩu.
+3. Gọi `POST /admin/rbac/bootstrap` kèm header `X-Bootstrap-Token: <giá trị BOOTSTRAP_TOKEN>` và body JSON:
+   `{ "identifier": "<email hoặc phone vừa đăng ký>" }`.
+
+Nếu không cấu hình `BOOTSTRAP_TOKEN`, API trả `bootstrap_disabled`.
 
 ### 4) Migration (Alembic)
 Dự án có cơ chế auto-migrate khi app start (nếu cấu hình DB đầy đủ). Nếu muốn chạy thủ công:
@@ -197,4 +174,3 @@ end note
 deactivate "Web App"
 
 @enduml
-=======

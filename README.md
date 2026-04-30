@@ -1,6 +1,8 @@
 
 ## VELORA
 
+Repo đầy đủ frontend + backend: [github.com/maimill2906-debug/velora-ecommerce](https://github.com/maimill2906-debug/velora-ecommerce).
+
 Repository gồm:
 - **Frontend**: Vite + React (thư mục repo root)
 - **Backend**: Flask Clean Architecture (thư mục `Flask-CleanArchitecture/`)
@@ -31,18 +33,18 @@ npm run dev
 Frontend sẽ gọi API backend theo `VITE_API_BASE_URL`.
 
 ### Chạy Backend (Flask)
-Xem hướng dẫn chi tiết tại `Flask-CleanArchitecture/README.md`.
-
-Tóm tắt nhanh:
+Chi tiết: `Flask-CleanArchitecture/README.md`.
 
 ```bash
 cd Flask-CleanArchitecture
 py -m venv .venv
-.venv\\Scripts\\activate
-pip install -r src\\requirements.txt
+.venv\Scripts\activate.ps1
+pip install -r src/requirements.txt
 cd src
 python app.py
 ```
+
+**Admin đầu tiên:** gọi bootstrap RBAC theo `Flask-CleanArchitecture/README.md` (biến `BOOTSTRAP_TOKEN`, header `X-Bootstrap-Token`).
 
 Backend mặc định chạy tại `http://localhost:9999` và Swagger UI ở `http://localhost:9999/docs`.
   

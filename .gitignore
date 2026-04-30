@@ -1,1 +1,12 @@
 node_modules
+
+# Python / Flask backend
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.env
+*.sqlite3
+*.db

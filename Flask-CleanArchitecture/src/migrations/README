@@ -1,0 +1,11 @@
+# Alembic migrations
+
+This folder is managed by Alembic.
+
+Common commands (run from `Flask-CleanArchitecture/src`):
+
+- Generate migration:
+  `alembic revision --autogenerate -m "init"`
+- Apply migrations:
+  `alembic upgrade head`
+

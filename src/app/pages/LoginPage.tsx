@@ -13,8 +13,11 @@ import {
   type PhoneLoginFormData
 } from '../../lib/validations';
 import logoImg from '../../imports/image-1.png';
-import { apiFetch, setAuthToken } from '@/lib/apiClient';
+import { apiFetch, setAuthToken, setSessionUserType } from '@/lib/apiClient';
+import { resolvePostLoginNavigate } from '@/lib/roleAccess';
 import { toast } from 'sonner';
+
+type LoginResponse = { token: string; user_type: string };
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -37,13 +40,14 @@ export function LoginPage() {
 
   const onEmailSubmit = async (data: EmailLoginFormData) => {
     try {
-      const res = await apiFetch<{ token: string }>('/auth/login', {
+      const res = await apiFetch<LoginResponse>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ identifier: data.email, password: data.password }),
       });
       setAuthToken(res.token);
+      setSessionUserType(res.user_type ?? null);
       toast.success('Đăng nhập thành công!');
-      navigate(nextUrl);
+      navigate(resolvePostLoginNavigate(nextUrl, res.user_type));
     } catch (e: any) {
       toast.error(e?.message || 'Đăng nhập thất bại');
     }
@@ -51,13 +55,14 @@ export function LoginPage() {
 
   const onPhoneSubmit = async (data: PhoneLoginFormData) => {
     try {
-      const res = await apiFetch<{ token: string }>('/auth/login', {
+      const res = await apiFetch<LoginResponse>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ identifier: data.email, password: data.password }),
       });
       setAuthToken(res.token);
+      setSessionUserType(res.user_type ?? null);
       toast.success('Đăng nhập thành công!');
-      navigate(nextUrl);
+      navigate(resolvePostLoginNavigate(nextUrl, res.user_type));
     } catch (e: any) {
       toast.error(e?.message || 'Đăng nhập thất bại');
     }

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { apiFetch } from '@/lib/apiClient';
+import { apiFetch, clearAuthSession, getSessionUserType } from '@/lib/apiClient';
 import { toast } from 'sonner';
 const logoImg =
   'https://dummyimage.com/240x80/000/fff.png&text=VELORA';
@@ -208,12 +208,26 @@ export function POSPage() {
           <Separator orientation="vertical" className="h-8 bg-border" />
           <h1 className="text-lg uppercase tracking-wider font-medium">Point of Sale</h1>
         </div>
-        <Button variant="outline" className="border-black" asChild>
-          <Link to="/admin">
+        {getSessionUserType() === 'admin' ? (
+          <Button variant="outline" className="border-black" asChild>
+            <Link to="/admin">
+              <LogOut className="h-4 w-4 mr-2" />
+              Về Admin
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            className="border-black"
+            onClick={() => {
+              clearAuthSession();
+              navigate('/login');
+            }}
+          >
             <LogOut className="h-4 w-4 mr-2" />
-            Thoát POS
-          </Link>
-        </Button>
+            Đăng xuất
+          </Button>
+        )}
       </header>
 
       {/* Main Content */}

@@ -20,8 +20,16 @@ import { WarehousePage } from "./pages/WarehousePage";
 import { OrderTrackingPage } from "./pages/OrderTrackingPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import MarketingPage from "./pages/MarketingPage";
+import { StaffRouteGuard } from "./components/StaffRouteGuard";
+
 export const router = createBrowserRouter([
-  { path: "/marketing", element: <MarketingPage /> 
+  {
+    path: "/marketing",
+    element: (
+      <StaffRouteGuard allow={["marketing"]}>
+        <MarketingPage />
+      </StaffRouteGuard>
+    ),
   },
   {
     path: "/",
@@ -65,15 +73,27 @@ export const router = createBrowserRouter([
   },
   {
     path: "/admin",
-    Component: VeloraAdminDashboard,
+    element: (
+      <StaffRouteGuard allow={["admin"]}>
+        <VeloraAdminDashboard />
+      </StaffRouteGuard>
+    ),
   },
   {
     path: "/pos",
-    Component: POSPage,
+    element: (
+      <StaffRouteGuard allow={["sales"]}>
+        <POSPage />
+      </StaffRouteGuard>
+    ),
   },
   {
     path: "/warehouse",
-    Component: WarehousePage,
+    element: (
+      <StaffRouteGuard allow={["warehouse"]}>
+        <WarehousePage />
+      </StaffRouteGuard>
+    ),
   },
   {
     path: "/about",

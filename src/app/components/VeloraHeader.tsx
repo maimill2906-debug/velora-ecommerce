@@ -62,12 +62,6 @@ export function VeloraHeader() {
           {/* Right Navigation */}
           <div className="flex gap-8">
             <Link 
-              to="/admin" 
-              className="text-sm uppercase tracking-wider opacity-60 hover:opacity-100 transition-opacity"
-            >
-              Admin
-            </Link>
-            <Link 
               to="/cart" 
               className="text-sm uppercase tracking-wider opacity-60 hover:opacity-100 transition-opacity relative"
             >

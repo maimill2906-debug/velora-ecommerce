@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/apiClient";
+import { Link, useNavigate } from "react-router";
+import { apiFetch, clearAuthSession, getSessionUserType } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 // ============================================================
@@ -487,8 +488,10 @@ const MarketingAnalyticsTab = () => {
 // MAIN: MARKETING PAGE
 // ============================================================
 export default function MarketingPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("campaigns");
   const [overview, setOverview] = useState({ campaigns: 0, activeCampaigns: 0, vouchers: 0 });
+  const sessionRole = getSessionUserType();
 
   useEffect(() => {
     Promise.all([
@@ -515,10 +518,27 @@ export default function MarketingPage() {
 
   return (
     <div style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif", background: "#f9f9f9", minHeight: "100vh", padding: 32 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>Marketing</h1>
           <p style={{ margin: "4px 0 0", color: "#888", fontSize: 13 }}>Quản lý chiến dịch và voucher VELORA</p>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {sessionRole === "admin" && (
+            <Link to="/admin" style={{ fontSize: 13, padding: "8px 14px", border: "1px solid #000", color: "#000", textDecoration: "none", fontWeight: 600 }}>
+              Admin
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              clearAuthSession();
+              navigate("/login");
+            }}
+            style={{ fontSize: 13, padding: "8px 14px", border: "1px solid #ccc", background: "#fff", cursor: "pointer", fontWeight: 600 }}
+          >
+            Đăng xuất
+          </button>
         </div>
       </div>
 

@@ -19,7 +19,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiFetch, setAuthToken } from '@/lib/apiClient';
+import { apiFetch, clearAuthSession } from '@/lib/apiClient';
 
 interface Order {
   id: string;
@@ -134,7 +134,7 @@ export function ProfilePage() {
   };
 
   const handleLogout = () => {
-    setAuthToken(null);
+    clearAuthSession();
     try {
       localStorage.removeItem('velora_last_order_code');
     } catch {

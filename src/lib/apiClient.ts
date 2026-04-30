@@ -11,6 +11,8 @@ export function getApiBaseUrl(): string {
   return (base && base.trim()) || DEFAULT_BASE
 }
 
+const SESSION_USER_TYPE_KEY = 'velora_user_type'
+
 export function getAuthToken(): string | null {
   return localStorage.getItem('velora_token')
 }
@@ -18,6 +20,28 @@ export function getAuthToken(): string | null {
 export function setAuthToken(token: string | null) {
   if (!token) localStorage.removeItem('velora_token')
   else localStorage.setItem('velora_token', token)
+}
+
+export function getSessionUserType(): string | null {
+  try {
+    return localStorage.getItem(SESSION_USER_TYPE_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setSessionUserType(userType: string | null) {
+  try {
+    if (!userType) localStorage.removeItem(SESSION_USER_TYPE_KEY)
+    else localStorage.setItem(SESSION_USER_TYPE_KEY, userType)
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function clearAuthSession() {
+  setAuthToken(null)
+  setSessionUserType(null)
 }
 
 export async function apiFetch<T>(
@@ -50,7 +74,7 @@ export async function apiFetch<T>(
       const m = String((payload && (payload.message || payload.error)) || '')
       if (m === 'missing_token' || m === 'invalid_token') {
         try {
-          setAuthToken(null)
+          clearAuthSession()
         } catch {
           // ignore storage errors
         }

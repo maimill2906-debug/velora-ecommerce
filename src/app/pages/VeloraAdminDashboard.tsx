@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router';
-import { apiFetch } from '@/lib/apiClient';
+import { Link, useNavigate } from 'react-router';
+import { apiFetch, clearAuthSession } from '@/lib/apiClient';
 import {
   LayoutDashboard,
   Package,
@@ -119,6 +119,7 @@ const formatDateVN = (iso: string | null) => {
 const monthShort = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'];
 
 export function VeloraAdminDashboard() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabValue>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -343,6 +344,13 @@ export function VeloraAdminDashboard() {
 
         <div className="space-y-1">
           <Link
+            to="/marketing"
+            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary transition-all text-sm uppercase tracking-wider"
+          >
+            <Megaphone className="h-5 w-5" />
+            Marketing
+          </Link>
+          <Link
             to="/pos"
             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary transition-all text-sm uppercase tracking-wider"
           >
@@ -359,11 +367,16 @@ export function VeloraAdminDashboard() {
         </div>
       </nav>
       <div className="p-4 border-t border-border">
-        <Button variant="outline" className="w-full justify-start border-black" asChild>
-          <Link to="/login">
-            <LogOut className="h-4 w-4 mr-2" />
-            Đăng xuất
-          </Link>
+        <Button
+          variant="outline"
+          className="w-full justify-start border-black"
+          onClick={() => {
+            clearAuthSession();
+            navigate('/login');
+          }}
+        >
+          <LogOut className="h-4 w-4 mr-2" />
+          Đăng xuất
         </Button>
       </div>
     </div>

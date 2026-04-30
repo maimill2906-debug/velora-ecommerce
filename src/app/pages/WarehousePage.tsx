@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Package, TrendingUp, TrendingDown, Search, LogOut, Plus, Minus, RefreshCcw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -16,7 +16,7 @@ import {
 } from '../components/ui/table';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { apiFetch } from '@/lib/apiClient';
+import { apiFetch, clearAuthSession, getSessionUserType } from '@/lib/apiClient';
 import { toast } from 'sonner';
 
 const logoImg = 'https://dummyimage.com/240x80/000/fff.png&text=VELORA';
@@ -53,6 +53,7 @@ type ProductBrief = {
 const MIN_STOCK = 10;
 
 export function WarehousePage() {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('inventory');
 
@@ -249,12 +250,26 @@ export function WarehousePage() {
             <RefreshCcw className="h-4 w-4 mr-2" />
             Tải lại
           </Button>
-          <Button variant="outline" className="border-black" asChild>
-            <Link to="/admin">
+          {getSessionUserType() === 'admin' ? (
+            <Button variant="outline" className="border-black" asChild>
+              <Link to="/admin">
+                <LogOut className="h-4 w-4 mr-2" />
+                Về Admin
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="border-black"
+              onClick={() => {
+                clearAuthSession();
+                navigate('/login');
+              }}
+            >
               <LogOut className="h-4 w-4 mr-2" />
-              Thoát
-            </Link>
-          </Button>
+              Đăng xuất
+            </Button>
+          )}
         </div>
       </header>
 

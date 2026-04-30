@@ -44,57 +44,40 @@
 
 ## Infrastructure Layer
 
-## Chạy Backend (monorepo VELORA)
+## Chạy Backend
+BƯỚC 1: Tạo file môi trường ảo Flask-CleanArchitecture/src/.env
+  # Database (Supabase Session pooler - port 5432)
+  DATABASE_URI=postgresql://postgres.jowbspmuxlksjkdjrrjf:tQMher1CNR8brLxb@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres
 
-Backend nằm trong repo VELORA tại thư mục `Flask-CleanArchitecture/`.
+  # Bootstrap admin lần đầu — xoá biến này sau khi setup admin xong
+  BOOTSTRAP_TOKEN=Bina0608_bootstrap_token
 
-```bash
-python --version
-cd Flask-CleanArchitecture
-py -m venv .venv
-.venv\Scripts\activate.ps1
-pip install -r src/requirements.txt
-cd src
-python app.py
-```
+  # Forgot password trả token thẳng về UI khi dev (production phải tắt)
+  DEV_EXPOSE_RESET_TOKEN=1
 
-Trên Linux/macOS: `source .venv/bin/activate` thay cho bước kích hoạt `.ps1`.
+  # Kho mặc định để auto-trừ stock khi đặt hàng.
+  # Để trống = hệ thống tự lấy location đầu tiên. Bỏ qua nếu bạn chỉ có 1 kho.
+  # DEFAULT_INVENTORY_LOCATION_CODE=KHO_HCM
+BƯỚC 2: Tạo môi trường ảo
+  py -m venv .venv
+BƯỚC 3: Kích hoạt môi trường ảo
+  .venv\Scripts\Activate.ps1
+BƯỚC 4: Duy chuyển vào thư mục Flask-CleanArchitecture/src
+  cd Flask-CleanArchitecture/src
+BƯỚC 5: Cài đặt thư viện cần thiết
+  pip install -r requirements.txt
+BƯỚC 6: Chạy chương trình
+  python app.py
 
-
-
-Mặc định:
-- API: `http://localhost:9999`
-- Swagger UI: `http://localhost:9999/docs`
-- Swagger JSON: `http://localhost:9999/swagger.json`
-
-### Bootstrap admin đầu tiên (RBAC)
-
-1. Đặt biến môi trường `BOOTSTRAP_TOKEN` (ví dụ trong `.env` hoặc shell trước khi chạy `app.py`).
-2. Đăng ký user qua `POST /auth/register` với email hoặc phone và mật khẩu.
-3. Gọi `POST /admin/rbac/bootstrap` kèm header `X-Bootstrap-Token: <giá trị BOOTSTRAP_TOKEN>` và body JSON:
-   `{ "identifier": "<email hoặc phone vừa đăng ký>" }`.
-
-Nếu không cấu hình `BOOTSTRAP_TOKEN`, API trả `bootstrap_disabled`.
-
-### 4) Migration (Alembic)
-Dự án có cơ chế auto-migrate khi app start (nếu cấu hình DB đầy đủ). Nếu muốn chạy thủ công:
-
-```bash
-cd src
-python -m alembic -c alembic.ini upgrade head
-```
-
-Tạo migration mới (khi thay đổi ORM models):
-
-```bash
-cd src
-python -m alembic -c alembic.ini revision --autogenerate -m "your message"
-```
-
-
-
-## Lưu ý về MSSQL (legacy)
-Hệ thống chuẩn hóa dùng **PostgreSQL trên Supabase**. Phần MSSQL/Docker dưới đây là nội dung cũ (không dùng cho VELORA), có thể bỏ qua.
+## Chạy Frontend
+BƯỚC 1: Duy chuyển đến thư mục frontend
+  cd D:\velora-ecommerce
+BƯỚC 2: Tải các gói cần thiếtthiết
+  npm install
+BƯỚC 4: Chạy chương trình
+  npm run dev
+BƯỚC 5: KIỂM TRA LỖI HỆ THỐNG
+  npm run build
 
 ## ORM Flask (from sqlalchemy.orm )
 Object Relational Mapping

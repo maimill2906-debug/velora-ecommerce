@@ -22,6 +22,7 @@ class LoginRequestSchema(Schema):
 
 class LoginResponseSchema(Schema):
     token = fields.Str(required=True)
+    user_type = fields.Str(required=False)
 
 
 class ChangePasswordRequestSchema(Schema):

@@ -1,10 +1,7 @@
 import { createBrowserRouter } from "react-router";
-import { HomePage } from "./pages/HomePage";
-import { ShopPage } from "./pages/ShopPage";
 import { ProductDetailPage } from "./pages/ProductDetailPage";
 import { CartPage } from "./pages/CartPage";
 import { CheckoutPage } from "./pages/CheckoutPage";
-import { AdminDashboard } from "./pages/AdminDashboard";
 import { AboutPage } from "./pages/AboutPage";
 import { ContactPage } from "./pages/ContactPage";
 
@@ -102,18 +99,5 @@ export const router = createBrowserRouter([
   {
     path: "/contact",
     Component: ContactPage,
-  },
-  // Legacy routes
-  {
-    path: "/old-home",
-    Component: HomePage,
-  },
-  {
-    path: "/old-shop",
-    Component: ShopPage,
-  },
-  {
-    path: "/old-admin",
-    Component: AdminDashboard,
   },
 ]);

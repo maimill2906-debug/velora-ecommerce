@@ -94,7 +94,7 @@ python -m alembic -c alembic.ini revision --autogenerate -m "your message"
 
 
 ## Lưu ý về MSSQL (legacy)
-Theo `guidelines/Guidelines.md`, hệ thống chuẩn hóa dùng **PostgreSQL trên Supabase**. Phần MSSQL/Docker dưới đây là nội dung cũ (không dùng cho VELORA), có thể bỏ qua.
+Hệ thống chuẩn hóa dùng **PostgreSQL trên Supabase**. Phần MSSQL/Docker dưới đây là nội dung cũ (không dùng cho VELORA), có thể bỏ qua.
 
 ## ORM Flask (from sqlalchemy.orm )
 Object Relational Mapping

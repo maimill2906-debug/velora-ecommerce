@@ -19,7 +19,13 @@ from .catalog_models import (
 from .inventory_models import InventoryLocationModel, StockItemModel, StockTransactionModel
 from .channels_models import ChannelSyncStateModel, SalesChannelModel
 from .marketing_models import MarketingCampaignModel, VoucherModel
-from .orders_models import AddressModel, OrderItemModel, OrderModel, PaymentModel
+from .orders_models import (
+    AddressModel,
+    OrderItemModel,
+    OrderModel,
+    OrderStatusHistoryModel,
+    PaymentModel,
+)
 
 __all__ = [
     "FunctionModel",
@@ -47,6 +53,7 @@ __all__ = [
     "AddressModel",
     "OrderModel",
     "OrderItemModel",
+    "OrderStatusHistoryModel",
     "PaymentModel",
 ]
 

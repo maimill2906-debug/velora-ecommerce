@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +13,14 @@ from ._base import TimestampMixin, UUIDPrimaryKeyMixin
 
 class CustomerProfileModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "customer_profiles"
+    __table_args__ = (
+        Index(
+            "uq_customer_profiles_user_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL"),
+        ),
+    )
 
     user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)

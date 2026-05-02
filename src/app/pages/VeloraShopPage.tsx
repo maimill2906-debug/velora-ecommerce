@@ -17,6 +17,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../components/ui/sheet';
 import { Separator } from '../components/ui/separator';
 import { apiFetch } from '@/lib/apiClient';
+import { getColorBackground } from '@/lib/colors';
 
 type ShopProduct = {
   id: string;
@@ -160,7 +161,11 @@ export function VeloraShopPage() {
   }, [allProducts, category, matchingCategory, searchQuery, selectedSizes, selectedColors, priceRange, sortBy]);
 
   const sizes = ['S', 'M', 'L', 'XL'];
-  const colors = ['Đen', 'Trắng', 'Xám', 'Be', 'Xanh'];
+  /** Danh s\u00e1ch m\u00e0u l\u1ea5y t\u1eeb d\u1eef li\u1ec7u th\u1eadt c\u1ee7a t\u1ea5t c\u1ea3 s\u1ea3n ph\u1ea9m \u0111ang load. */
+  const colors = useMemo(
+    () => Array.from(new Set(allProducts.flatMap((p) => p.colors))).sort(),
+    [allProducts]
+  );
 
   const toggleSize = (size: string) => {
     setSelectedSizes(prev => 
@@ -208,17 +213,22 @@ export function VeloraShopPage() {
         <div className="space-y-3">
           {colors.map(color => (
             <div key={color} className="flex items-center gap-3">
-              <Checkbox 
+              <Checkbox
                 id={`color-${color}`}
                 checked={selectedColors.includes(color)}
                 onCheckedChange={() => toggleColor(color)}
                 className="border-black data-[state=checked]:bg-black"
               />
-              <Label 
-                htmlFor={`color-${color}`} 
-                className="cursor-pointer text-sm"
+              <Label
+                htmlFor={`color-${color}`}
+                className="cursor-pointer text-sm flex items-center gap-2"
                 style={{ textTransform: 'none' }}
               >
+                <span
+                  aria-hidden
+                  className="inline-block w-4 h-4 rounded-full border border-border"
+                  style={{ background: getColorBackground(color) }}
+                />
                 {color}
               </Label>
             </div>
@@ -337,7 +347,6 @@ export function VeloraShopPage() {
                         src={product.image}
                         alt={product.name}
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                        style={{ filter: 'grayscale(100%)' }}
                       />
                     </div>
                     <h3 className="mb-2 font-medium group-hover:underline">
@@ -346,12 +355,21 @@ export function VeloraShopPage() {
                     <p className="text-sm text-muted-foreground">
                       {product.price.toLocaleString('vi-VN')}₫
                     </p>
-                    <div className="flex gap-2 mt-2">
-                      {product.colors.slice(0, 3).map((color, i) => (
-                        <span key={i} className="text-xs text-muted-foreground">
-                          {color}
-                        </span>
+                    <div className="flex gap-1.5 mt-2 items-center">
+                      {product.colors.slice(0, 5).map((color, i) => (
+                        <span
+                          key={i}
+                          title={color}
+                          aria-label={color}
+                          className="inline-block w-4 h-4 rounded-full border border-border"
+                          style={{ background: getColorBackground(color) }}
+                        />
                       ))}
+                      {product.colors.length > 5 && (
+                        <span className="text-xs text-muted-foreground">
+                          +{product.colors.length - 5}
+                        </span>
+                      )}
                     </div>
                   </Link>
                 ))}

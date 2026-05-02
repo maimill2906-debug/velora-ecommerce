@@ -38,13 +38,11 @@ interface WishlistItem {
 export function ProfilePage() {
   const navigate = useNavigate();
   const [editMode, setEditMode] = useState(false);
+  /** Khớp `customer_profiles`: full_name, email, phone (không có ngày sinh / giới tính / địa chỉ text — địa chỉ lưu theo đơn trong bảng `addresses`). */
   const [profile, setProfile] = useState({
-    fullName: 'Nguyễn Thị Minh',
-    email: 'minh.nguyen@email.com',
-    phone: '0912345678',
-    birthDate: '1995-06-15',
-    gender: 'Nữ',
-    address: '47 Tràng Tiền, Hoàn Kiếm, Hà Nội',
+    fullName: '',
+    email: '',
+    phone: '',
   });
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -457,7 +455,6 @@ export function ProfilePage() {
                           src={item.image}
                           alt={item.name}
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                          style={{ filter: 'grayscale(100%)' }}
                         />
                       </Link>
                       <button
@@ -534,37 +531,9 @@ export function ProfilePage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Ngày sinh</Label>
-                    <Input
-                      type={editMode ? 'date' : 'text'}
-                      value={editMode ? profile.birthDate : new Date(profile.birthDate).toLocaleDateString('vi-VN')}
-                      onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })}
-                      disabled={!editMode}
-                      className={editMode ? 'border-black' : 'border-border'}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Giới tính</Label>
-                    <Input
-                      value={profile.gender}
-                      onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
-                      disabled={!editMode}
-                      className={editMode ? 'border-black' : 'border-border'}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Địa chỉ mặc định</Label>
-                  <Input
-                    value={profile.address}
-                    onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                    disabled={!editMode}
-                    className={editMode ? 'border-black' : 'border-border'}
-                  />
-                </div>
+                <p className="text-sm text-muted-foreground border-t border-border pt-4">
+                  Địa chỉ giao hàng được lưu theo từng đơn hàng khi thanh toán, không lưu trong hồ sơ này.
+                </p>
 
                 {editMode && (
                   <div className="flex gap-3 pt-2">

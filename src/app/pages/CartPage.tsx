@@ -59,7 +59,6 @@ export function CartPage() {
                       src={item.image}
                       alt={item.title}
                       className="w-full h-full object-cover"
-                      style={{ filter: 'grayscale(100%)' }}
                     />
                   </div>
 

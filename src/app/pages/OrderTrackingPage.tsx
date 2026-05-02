@@ -348,7 +348,6 @@ export function OrderTrackingPage() {
                             src={item.image} 
                             alt={item.name}
                             className="w-full h-full object-cover"
-                            style={{ filter: 'grayscale(100%)' }}
                           />
                         </div>
                         <div className="flex-1">

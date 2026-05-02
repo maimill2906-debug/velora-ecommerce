@@ -40,10 +40,12 @@ import { Separator } from '../components/ui/separator';
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '../components/ui/dialog';
+import { Textarea } from '../components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -107,6 +109,72 @@ interface AdminOrderRow {
   rawDate: string | null;
 }
 
+interface OrderDetail {
+  id: string;
+  code: string;
+  status: string;
+  customer: { id: string; full_name: string; email: string | null; phone: string | null } | null;
+  shipping_address: {
+    full_name: string;
+    phone: string;
+    line1: string;
+    line2: string | null;
+    ward: string | null;
+    district: string | null;
+    province: string | null;
+    country: string;
+  } | null;
+  subtotal_amount: number;
+  discount_amount: number;
+  shipping_fee: number;
+  total_amount: number;
+  placed_at: string | null;
+  items: Array<{
+    id: string;
+    line_no: number;
+    product_id: string | null;
+    variant_id: string | null;
+    quantity: number;
+    unit_price: number;
+    line_total: number;
+  }>;
+  payments: Array<{ id: string; method: string; status: string; amount: number; paid_at: string | null }>;
+  status_history: Array<{ id: string; status: string; note: string | null; created_at: string | null }>;
+}
+
+interface InventoryRow {
+  product_id: string;
+  sku: string;
+  name: string;
+  variant_count: number;
+  qty_on_hand: number;
+  qty_reserved: number;
+  qty_available: number;
+}
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  draft: 'Nháp',
+  placed: 'Đã đặt',
+  confirmed: 'Đã xác nhận',
+  packed: 'Đã đóng gói',
+  shipped: 'Đang giao',
+  delivered: 'Đã giao',
+  cancelled: 'Đã hủy',
+  returned: 'Hoàn hàng',
+};
+
+/** Trạng thái có thể chuyển kế tiếp (FSM) — khớp ALLOWED_STATUS_TRANSITIONS phía backend. */
+const NEXT_STATUSES: Record<string, string[]> = {
+  draft: ['placed', 'cancelled'],
+  placed: ['confirmed', 'cancelled'],
+  confirmed: ['packed', 'cancelled'],
+  packed: ['shipped', 'cancelled'],
+  shipped: ['delivered', 'returned'],
+  delivered: ['returned'],
+  cancelled: [],
+  returned: [],
+};
+
 const VND = (n: number) => `${Number(n || 0).toLocaleString('vi-VN')}₫`;
 const formatDateVN = (iso: string | null) => {
   if (!iso) return '—';
@@ -133,6 +201,19 @@ export function VeloraAdminDashboard() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
 
+  // Order detail dialog
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detail, setDetail] = useState<OrderDetail | null>(null);
+  const [statusDraft, setStatusDraft] = useState<string>('');
+  const [noteDraft, setNoteDraft] = useState<string>('');
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  // Inventory (stock summary)
+  const [inventory, setInventory] = useState<InventoryRow[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+  const [inventorySearch, setInventorySearch] = useState('');
+
   useEffect(() => {
     setProductsLoading(true);
     apiFetch<any[]>('/catalog/products?limit=500')
@@ -158,16 +239,16 @@ export function VeloraAdminDashboard() {
       .finally(() => setProductsLoading(false));
   }, []);
 
-  useEffect(() => {
+  const reloadOrders = () => {
     setOrdersLoading(true);
     apiFetch<any[]>('/orders?limit=200', { auth: true })
       .then((rows) => {
         const list: AdminOrderRow[] = (rows || []).map((o: any) => ({
           id: o.id,
           code: o.code,
-          customer: o.customer_id ? `${String(o.customer_id).slice(0, 8)}…` : 'Khách lẻ',
+          customer: o.customer?.full_name || (o.customer_id ? `${String(o.customer_id).slice(0, 8)}…` : 'Khách lẻ'),
           customerId: o.customer_id || null,
-          items: 0,
+          items: o.items_count ?? 0,
           total: o.total_amount || 0,
           status: o.status || 'placed',
           channel: 'Website',
@@ -178,6 +259,22 @@ export function VeloraAdminDashboard() {
       })
       .catch(() => setOrders([]))
       .finally(() => setOrdersLoading(false));
+  };
+
+  useEffect(() => {
+    reloadOrders();
+  }, []);
+
+  const reloadInventory = () => {
+    setInventoryLoading(true);
+    apiFetch<InventoryRow[]>('/inventory/stock-summary', { auth: true })
+      .then((rows) => setInventory(rows || []))
+      .catch(() => setInventory([]))
+      .finally(() => setInventoryLoading(false));
+  };
+
+  useEffect(() => {
+    reloadInventory();
   }, []);
 
   useEffect(() => {
@@ -236,11 +333,11 @@ export function VeloraAdminDashboard() {
   }, [products]);
 
   const lowStockItems = useMemo(() => {
-    return products
-      .filter((p) => p.stock !== undefined && p.stock < 10)
-      .slice(0, 3)
-      .map((p) => ({ name: p.name, stock: p.stock, sku: p.sku }));
-  }, [products]);
+    return inventory
+      .filter((p) => p.qty_available < 10)
+      .slice(0, 5)
+      .map((p) => ({ name: p.name, stock: p.qty_available, sku: p.sku }));
+  }, [inventory]);
 
   const recentOrders = orders.slice(0, 6);
 
@@ -260,17 +357,84 @@ export function VeloraAdminDashboard() {
     return <span className={`text-xs px-2 py-1 ${c.className}`}>{c.label}</span>;
   };
 
-  const updateOrderStatusApi = async (orderId: string, newStatus: string) => {
+  const openOrderDetail = async (orderId: string) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetail(null);
+    setNoteDraft('');
     try {
-      await apiFetch(`/orders/${orderId}/status`, {
+      const data = await apiFetch<OrderDetail>(`/orders/${orderId}`, { auth: true });
+      setDetail(data);
+      setStatusDraft(data.status);
+    } catch (e: any) {
+      toast.error(`Không tải được chi tiết đơn: ${e?.message || ''}`);
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const submitStatusChange = async (override?: { status?: string; note?: string; restockReload?: boolean }) => {
+    if (!detail) return;
+    const status = override?.status ?? statusDraft;
+    const note = override?.note ?? noteDraft;
+    if (!status) {
+      toast.error('Chưa chọn trạng thái');
+      return;
+    }
+    setSavingStatus(true);
+    try {
+      await apiFetch(`/orders/${detail.id}/status`, {
         method: 'PATCH',
         auth: true,
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status, note: note?.trim() || null }),
       });
-      setOrders((arr) => arr.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o)));
       toast.success('Đã cập nhật trạng thái');
+      setOrders((arr) => arr.map((o) => (o.id === detail.id ? { ...o, status } : o)));
+      // Reload chi tiết để cập nhật history + status
+      const updated = await apiFetch<OrderDetail>(`/orders/${detail.id}`, { auth: true });
+      setDetail(updated);
+      setStatusDraft(updated.status);
+      setNoteDraft('');
+      // Hủy/hoàn => reload tồn kho
+      if (status === 'cancelled' || status === 'returned') {
+        reloadInventory();
+      }
     } catch (e: any) {
       toast.error(`Lỗi cập nhật: ${e?.message || ''}`);
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
+  const quickConfirm = async (orderId: string) => {
+    try {
+      await apiFetch(`/orders/${orderId}/confirm`, {
+        method: 'POST',
+        auth: true,
+        body: JSON.stringify({ note: 'Xác nhận nhanh từ danh sách' }),
+      });
+      setOrders((arr) => arr.map((o) => (o.id === orderId ? { ...o, status: 'confirmed' } : o)));
+      toast.success('Đã xác nhận đơn');
+    } catch (e: any) {
+      toast.error(`Lỗi xác nhận: ${e?.message || ''}`);
+    }
+  };
+
+  const quickCancel = async (orderId: string) => {
+    const reason = window.prompt('Nhập lý do hủy đơn (sẽ lưu vào ghi chú trạng thái):', 'Hủy theo yêu cầu');
+    if (reason === null) return;
+    try {
+      await apiFetch(`/orders/${orderId}/cancel`, {
+        method: 'POST',
+        auth: true,
+        body: JSON.stringify({ note: reason || 'Hủy đơn' }),
+      });
+      setOrders((arr) => arr.map((o) => (o.id === orderId ? { ...o, status: 'cancelled' } : o)));
+      toast.success('Đã hủy đơn — đã hoàn kho');
+      reloadInventory();
+    } catch (e: any) {
+      toast.error(`Lỗi hủy đơn: ${e?.message || ''}`);
     }
   };
 
@@ -642,60 +806,250 @@ export function VeloraAdminDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredOrders.map((order) => (
-                        <TableRow key={order.id}>
-                          <TableCell className="font-mono font-medium text-sm">{order.code}</TableCell>
-                          <TableCell>{order.customer}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{order.date}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">{order.channel}</Badge>
-                          </TableCell>
-                          <TableCell>{VND(order.total)}</TableCell>
-                          <TableCell>{getStatusBadge(order.status)}</TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => {
-                                  try {
-                                    localStorage.setItem('velora_last_order_code', order.code);
-                                  } catch {
-                                    /* ignore */
-                                  }
-                                  window.open(`/order-tracking?code=${encodeURIComponent(order.code)}`, '_blank');
-                                }}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Select value={order.status} onValueChange={(v) => updateOrderStatusApi(order.id, v)}>
-                                <SelectTrigger className="h-8 w-8 border-0 p-0">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="placed">Đã đặt</SelectItem>
-                                  <SelectItem value="confirmed">Đã xác nhận</SelectItem>
-                                  <SelectItem value="packed">Đã đóng gói</SelectItem>
-                                  <SelectItem value="shipped">Đang giao</SelectItem>
-                                  <SelectItem value="delivered">Đã giao</SelectItem>
-                                  <SelectItem value="cancelled">Hủy đơn</SelectItem>
-                                  <SelectItem value="returned">Hoàn hàng</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {filteredOrders.map((order) => {
+                        const canConfirm = order.status === 'placed';
+                        const canCancel = !['cancelled', 'returned', 'shipped', 'delivered'].includes(order.status);
+                        return (
+                          <TableRow key={order.id}>
+                            <TableCell className="font-mono font-medium text-sm">{order.code}</TableCell>
+                            <TableCell>{order.customer}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{order.date}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">{order.channel}</Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">{order.items} món</TableCell>
+                            <TableCell>{VND(order.total)}</TableCell>
+                            <TableCell>{getStatusBadge(order.status)}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-1 items-center">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Xem chi tiết"
+                                  onClick={() => openOrderDetail(order.id)}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                {canConfirm && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 border-black text-xs"
+                                    onClick={() => quickConfirm(order.id)}
+                                  >
+                                    Xác nhận
+                                  </Button>
+                                )}
+                                {canCancel && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 border-red-300 text-red-600 hover:bg-red-50 text-xs"
+                                    onClick={() => quickCancel(order.id)}
+                                  >
+                                    Hủy
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                   {filteredOrders.length === 0 && (
                     <div className="text-center py-12 text-muted-foreground">
-                      Không tìm thấy đơn hàng phù hợp
+                      {ordersLoading ? 'Đang tải đơn hàng…' : 'Không tìm thấy đơn hàng phù hợp'}
                     </div>
                   )}
                 </CardContent>
               </Card>
+
+              <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
+                      {detail ? `Đơn hàng ${detail.code}` : 'Chi tiết đơn hàng'}
+                    </DialogTitle>
+                  </DialogHeader>
+
+                  {detailLoading || !detail ? (
+                    <div className="py-12 text-center text-muted-foreground text-sm">Đang tải…</div>
+                  ) : (
+                    <div className="space-y-6 mt-2">
+                      {/* Tổng quan */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground tracking-wider">Trạng thái</p>
+                          <div className="mt-1">{getStatusBadge(detail.status)}</div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground tracking-wider">Đặt lúc</p>
+                          <p className="text-sm mt-1">{formatDateVN(detail.placed_at)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground tracking-wider">Khách hàng</p>
+                          <p className="text-sm mt-1 font-medium">{detail.customer?.full_name || '—'}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {detail.customer?.email || '—'} · {detail.customer?.phone || '—'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground tracking-wider">Tổng tiền</p>
+                          <p className="text-sm mt-1 font-semibold">{VND(detail.total_amount)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Tạm tính {VND(detail.subtotal_amount)} · Giảm {VND(detail.discount_amount)} · Phí ship {VND(detail.shipping_fee)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Địa chỉ giao */}
+                      {detail.shipping_address && (
+                        <div className="border border-border p-3">
+                          <p className="text-xs uppercase text-muted-foreground tracking-wider mb-1">Địa chỉ giao hàng</p>
+                          <p className="text-sm font-medium">
+                            {detail.shipping_address.full_name} · {detail.shipping_address.phone}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {[
+                              detail.shipping_address.line1,
+                              detail.shipping_address.line2,
+                              detail.shipping_address.ward,
+                              detail.shipping_address.district,
+                              detail.shipping_address.province,
+                              detail.shipping_address.country,
+                            ]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Items */}
+                      <div>
+                        <p className="text-xs uppercase text-muted-foreground tracking-wider mb-2">Sản phẩm</p>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>#</TableHead>
+                              <TableHead>Variant</TableHead>
+                              <TableHead className="text-right">Số lượng</TableHead>
+                              <TableHead className="text-right">Đơn giá</TableHead>
+                              <TableHead className="text-right">Thành tiền</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {detail.items.map((it) => (
+                              <TableRow key={it.id}>
+                                <TableCell className="text-sm">{it.line_no}</TableCell>
+                                <TableCell className="text-xs font-mono text-muted-foreground">
+                                  {it.variant_id ? it.variant_id.slice(0, 8) + '…' : '—'}
+                                </TableCell>
+                                <TableCell className="text-right">{it.quantity}</TableCell>
+                                <TableCell className="text-right">{VND(it.unit_price)}</TableCell>
+                                <TableCell className="text-right font-medium">{VND(it.line_total)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* Cập nhật trạng thái */}
+                      <div className="border border-black p-4 space-y-3">
+                        <p className="text-xs uppercase tracking-wider">Cập nhật trạng thái</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Trạng thái mới</Label>
+                            <Select value={statusDraft} onValueChange={setStatusDraft}>
+                              <SelectTrigger className="border-black">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={detail.status}>
+                                  {ORDER_STATUS_LABELS[detail.status] || detail.status} (giữ nguyên)
+                                </SelectItem>
+                                {(NEXT_STATUSES[detail.status] || []).map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {ORDER_STATUS_LABELS[s] || s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Ghi chú trạng thái</Label>
+                            <Textarea
+                              value={noteDraft}
+                              onChange={(e) => setNoteDraft(e.target.value)}
+                              placeholder="VD: Khách yêu cầu giao trước 17h…"
+                              className="border-black h-[40px] min-h-[40px]"
+                              rows={1}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            className="bg-black text-white hover:bg-gray-800"
+                            disabled={savingStatus}
+                            onClick={() => submitStatusChange()}
+                          >
+                            Lưu cập nhật
+                          </Button>
+                          {NEXT_STATUSES[detail.status]?.includes('confirmed') && (
+                            <Button
+                              variant="outline"
+                              className="border-black"
+                              disabled={savingStatus}
+                              onClick={() => submitStatusChange({ status: 'confirmed', note: noteDraft || 'Xác nhận đơn' })}
+                            >
+                              Xác nhận đơn
+                            </Button>
+                          )}
+                          {NEXT_STATUSES[detail.status]?.includes('cancelled') && (
+                            <Button
+                              variant="outline"
+                              className="border-red-300 text-red-600 hover:bg-red-50"
+                              disabled={savingStatus}
+                              onClick={() => submitStatusChange({ status: 'cancelled', note: noteDraft || 'Hủy đơn' })}
+                            >
+                              Hủy đơn (hoàn kho)
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Lịch sử trạng thái */}
+                      <div>
+                        <p className="text-xs uppercase text-muted-foreground tracking-wider mb-2">Lịch sử trạng thái</p>
+                        <ol className="space-y-2 border-l-2 border-black pl-4">
+                          {detail.status_history.length === 0 && (
+                            <li className="text-sm text-muted-foreground">Chưa có lịch sử.</li>
+                          )}
+                          {detail.status_history.map((h) => (
+                            <li key={h.id} className="relative">
+                              <span className="absolute -left-[21px] top-1.5 w-3 h-3 rounded-full bg-black" />
+                              <p className="text-sm font-medium">
+                                {ORDER_STATUS_LABELS[h.status] || h.status}
+                                <span className="text-muted-foreground font-normal ml-2 text-xs">
+                                  {h.created_at ? new Date(h.created_at).toLocaleString('vi-VN') : ''}
+                                </span>
+                              </p>
+                              {h.note && <p className="text-xs text-muted-foreground mt-0.5">{h.note}</p>}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    </div>
+                  )}
+
+                  <DialogFooter>
+                    <Button variant="outline" className="border-black" onClick={() => setDetailOpen(false)}>
+                      Đóng
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           )}
 
@@ -888,29 +1242,52 @@ export function VeloraAdminDashboard() {
           {/* ──────────────── INVENTORY ──────────────── */}
           {activeTab === 'inventory' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {[
-                  { label: 'Tổng tồn kho', value: products.reduce((s, p) => s + p.stock, 0), sub: 'sản phẩm' },
-                  { label: 'SKU đang quản lý', value: products.length, sub: 'mã sản phẩm' },
-                  { label: 'Cảnh báo tồn thấp', value: products.filter(p => p.stock < 10).length, sub: 'cần nhập thêm', red: true },
-                ].map((stat, i) => (
-                  <Card key={i} className={`velora-card ${stat.red ? 'border-red-200' : ''}`}>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
-                        {stat.label}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className={`text-3xl velora-heading ${stat.red ? 'text-red-600' : ''}`} style={{ fontFamily: 'var(--font-heading)' }}>
-                        {stat.value}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>
-                    </CardContent>
-                  </Card>
-                ))}
+              {(() => {
+                const totalOnHand = inventory.reduce((s, r) => s + (r.qty_on_hand || 0), 0);
+                const totalReserved = inventory.reduce((s, r) => s + (r.qty_reserved || 0), 0);
+                const lowStock = inventory.filter((r) => (r.qty_available ?? r.qty_on_hand) < 10);
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    {[
+                      { label: 'Tổng tồn (on-hand)', value: totalOnHand.toLocaleString('vi-VN'), sub: 'đơn vị' },
+                      { label: 'Đang giữ (reserved)', value: totalReserved.toLocaleString('vi-VN'), sub: 'đơn vị' },
+                      { label: 'SKU đang quản lý', value: inventory.length, sub: 'mã sản phẩm' },
+                      { label: 'Cảnh báo tồn thấp', value: lowStock.length, sub: 'cần nhập thêm', red: true },
+                    ].map((stat, i) => (
+                      <Card key={i} className={`velora-card ${stat.red ? 'border-red-200' : ''}`}>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
+                            {stat.label}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className={`text-3xl velora-heading ${stat.red ? 'text-red-600' : ''}`} style={{ fontFamily: 'var(--font-heading)' }}>
+                            {stat.value}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
+                <div className="relative w-full max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Tìm SKU, sản phẩm…"
+                    value={inventorySearch}
+                    onChange={(e) => setInventorySearch(e.target.value)}
+                    className="pl-9 border-black"
+                  />
+                </div>
+                <Button variant="outline" className="border-black" onClick={reloadInventory} disabled={inventoryLoading}>
+                  {inventoryLoading ? 'Đang tải…' : 'Làm mới'}
+                </Button>
               </div>
 
-              {/* Low stock alerts */}
+              {/* Low stock alerts (theo qty_available) */}
               <Card className="velora-card border-red-200">
                 <CardHeader>
                   <CardTitle className="text-red-700" style={{ fontFamily: 'var(--font-heading)' }}>
@@ -923,25 +1300,25 @@ export function VeloraAdminDashboard() {
                       <TableRow>
                         <TableHead>SKU</TableHead>
                         <TableHead>Sản phẩm</TableHead>
-                        <TableHead className="text-right">Tồn kho</TableHead>
+                        <TableHead className="text-right">Tồn khả dụng</TableHead>
                         <TableHead>Trạng thái</TableHead>
                         <TableHead>Hành động</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {products
-                        .filter((p) => p.stock < 10)
+                      {inventory
+                        .filter((p) => p.qty_available < 10)
                         .map((product) => (
-                          <TableRow key={product.id}>
+                          <TableRow key={product.product_id}>
                             <TableCell className="font-mono text-xs">{product.sku}</TableCell>
                             <TableCell className="font-medium">{product.name}</TableCell>
                             <TableCell className="text-right">
-                              <span className={product.stock === 0 ? 'text-red-600 font-bold' : 'text-yellow-600 font-medium'}>
-                                {product.stock}
+                              <span className={product.qty_available <= 0 ? 'text-red-600 font-bold' : 'text-yellow-600 font-medium'}>
+                                {product.qty_available}
                               </span>
                             </TableCell>
                             <TableCell>
-                              {product.stock === 0 ? (
+                              {product.qty_available <= 0 ? (
                                 <span className="text-xs text-red-600 border border-red-300 px-2 py-1">Hết hàng</span>
                               ) : (
                                 <span className="text-xs text-yellow-600 border border-yellow-300 px-2 py-1">Tồn thấp</span>
@@ -959,6 +1336,13 @@ export function VeloraAdminDashboard() {
                             </TableCell>
                           </TableRow>
                         ))}
+                      {!inventoryLoading && inventory.filter((p) => p.qty_available < 10).length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                            Không có sản phẩm tồn thấp.
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -968,7 +1352,7 @@ export function VeloraAdminDashboard() {
               <Card className="velora-card">
                 <CardHeader>
                   <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                    Tổng quan tồn kho
+                    Tổng quan tồn kho (gộp theo sản phẩm)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -977,29 +1361,47 @@ export function VeloraAdminDashboard() {
                       <TableRow>
                         <TableHead>SKU</TableHead>
                         <TableHead>Sản phẩm</TableHead>
-                        <TableHead>Danh mục</TableHead>
-                        <TableHead className="text-right">Tồn kho</TableHead>
+                        <TableHead className="text-right">Số variant</TableHead>
+                        <TableHead className="text-right">On-hand</TableHead>
+                        <TableHead className="text-right">Reserved</TableHead>
+                        <TableHead className="text-right">Khả dụng</TableHead>
                         <TableHead>Tình trạng</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {products.map((product) => (
-                        <TableRow key={product.id}>
-                          <TableCell className="font-mono text-xs text-muted-foreground">{product.sku}</TableCell>
-                          <TableCell className="font-medium">{product.name}</TableCell>
-                          <TableCell className="text-sm">{product.category}</TableCell>
-                          <TableCell className="text-right font-semibold">{product.stock}</TableCell>
-                          <TableCell>
-                            {product.stock === 0 ? (
-                              <span className="text-xs text-red-600 border border-red-300 px-2 py-1">Hết hàng</span>
-                            ) : product.stock < 10 ? (
-                              <span className="text-xs text-yellow-600 border border-yellow-300 px-2 py-1">Tồn thấp</span>
-                            ) : (
-                              <span className="text-xs border border-border px-2 py-1">Đủ hàng</span>
-                            )}
+                      {inventory
+                        .filter(
+                          (p) =>
+                            !inventorySearch ||
+                            p.name.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+                            p.sku.toLowerCase().includes(inventorySearch.toLowerCase())
+                        )
+                        .map((product) => (
+                          <TableRow key={product.product_id}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{product.sku}</TableCell>
+                            <TableCell className="font-medium">{product.name}</TableCell>
+                            <TableCell className="text-right text-sm">{product.variant_count}</TableCell>
+                            <TableCell className="text-right">{product.qty_on_hand}</TableCell>
+                            <TableCell className="text-right text-muted-foreground">{product.qty_reserved}</TableCell>
+                            <TableCell className="text-right font-semibold">{product.qty_available}</TableCell>
+                            <TableCell>
+                              {product.qty_available <= 0 ? (
+                                <span className="text-xs text-red-600 border border-red-300 px-2 py-1">Hết hàng</span>
+                              ) : product.qty_available < 10 ? (
+                                <span className="text-xs text-yellow-600 border border-yellow-300 px-2 py-1">Tồn thấp</span>
+                              ) : (
+                                <span className="text-xs border border-border px-2 py-1">Đủ hàng</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      {!inventoryLoading && inventory.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                            Chưa có dữ liệu tồn kho.
                           </TableCell>
                         </TableRow>
-                      ))}
+                      )}
                     </TableBody>
                   </Table>
                 </CardContent>

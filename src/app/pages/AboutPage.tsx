@@ -62,7 +62,6 @@ export function AboutPage() {
             backgroundImage: `url(${boutiqueImg})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            filter: 'grayscale(100%)',
           }}
         />
         <div className="absolute inset-0 bg-black/50" />
@@ -109,7 +108,6 @@ export function AboutPage() {
                 src={studioImg}
                 alt="VELORA Studio"
                 className="w-full h-full object-cover"
-                style={{ filter: 'grayscale(100%)' }}
               />
             </div>
           </div>
@@ -204,7 +202,6 @@ export function AboutPage() {
                     src={member.img}
                     alt={member.name}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                    style={{ filter: 'grayscale(100%)' }}
                   />
                 </div>
                 <h4 className="font-medium mb-1">{member.name}</h4>

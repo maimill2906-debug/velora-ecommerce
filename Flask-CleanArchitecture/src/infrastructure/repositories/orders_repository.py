@@ -6,24 +6,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
-from infrastructure.models.customers_models import CustomerProfileModel
-from infrastructure.models.orders_models import AddressModel, OrderItemModel, OrderModel, PaymentModel
+from infrastructure.models.orders_models import (
+    AddressModel,
+    OrderItemModel,
+    OrderModel,
+    OrderStatusHistoryModel,
+    PaymentModel,
+)
 
 
 class OrdersRepository:
     def __init__(self, session: Session):
         self.session = session
-
-    def get_or_create_customer_profile(self, *, user_id: uuid.UUID, full_name: str) -> CustomerProfileModel:
-        existing = self.session.execute(
-            select(CustomerProfileModel).where(CustomerProfileModel.user_id == user_id)
-        ).scalar_one_or_none()
-        if existing:
-            return existing
-        profile = CustomerProfileModel(user_id=user_id, full_name=full_name)
-        self.session.add(profile)
-        self.session.flush()
-        return profile
 
     def create_address(self, addr: AddressModel) -> AddressModel:
         self.session.add(addr)
@@ -95,9 +89,41 @@ class OrdersRepository:
         return (
             self.session.execute(
                 select(OrderModel)
+                .options(joinedload(OrderModel.items))
                 .order_by(OrderModel.created_at.desc())
                 .limit(limit)
                 .offset(offset)
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+
+    # status history
+    def add_status_history(
+        self,
+        *,
+        order_id: uuid.UUID,
+        status: str,
+        note: str | None = None,
+        changed_by_user_id: uuid.UUID | None = None,
+    ) -> OrderStatusHistoryModel:
+        row = OrderStatusHistoryModel(
+            order_id=order_id,
+            status=status,
+            note=note,
+            changed_by_user_id=changed_by_user_id,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def list_status_history(self, order_id: uuid.UUID) -> list[OrderStatusHistoryModel]:
+        return (
+            self.session.execute(
+                select(OrderStatusHistoryModel)
+                .where(OrderStatusHistoryModel.order_id == order_id)
+                .order_by(OrderStatusHistoryModel.created_at.asc())
             )
             .scalars()
             .all()

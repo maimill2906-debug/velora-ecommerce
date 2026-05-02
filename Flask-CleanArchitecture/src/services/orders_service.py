@@ -6,10 +6,28 @@ from datetime import datetime, timezone
 
 from domain.models.enums import OrderStatus, PaymentMethod, PaymentStatus, StockTxnType
 from infrastructure.models.inventory_models import StockTransactionModel
-from infrastructure.models.orders_models import AddressModel, OrderItemModel, OrderModel, PaymentModel
+from infrastructure.models.orders_models import (
+    AddressModel,
+    OrderItemModel,
+    OrderModel,
+    PaymentModel,
+)
+from infrastructure.repositories.customers_repository import CustomersRepository
 from infrastructure.repositories.inventory_repository import InventoryRepository
 from infrastructure.repositories.orders_repository import OrdersRepository
 from infrastructure.repositories.rbac_repository import RbacRepository
+
+# Bộ chuyển trạng thái hợp lệ (FSM) — chặn admin/sales đổi tùy ý.
+ALLOWED_STATUS_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
+    OrderStatus.draft: {OrderStatus.placed, OrderStatus.cancelled},
+    OrderStatus.placed: {OrderStatus.confirmed, OrderStatus.cancelled},
+    OrderStatus.confirmed: {OrderStatus.packed, OrderStatus.cancelled},
+    OrderStatus.packed: {OrderStatus.shipped, OrderStatus.cancelled},
+    OrderStatus.shipped: {OrderStatus.delivered, OrderStatus.returned},
+    OrderStatus.delivered: {OrderStatus.returned},
+    OrderStatus.cancelled: set(),
+    OrderStatus.returned: set(),
+}
 
 
 class OrdersService:
@@ -22,6 +40,16 @@ class OrdersService:
         self.orders_repo = orders_repo
         self.rbac_repo = rbac_repo
         self.inventory_repo = inventory_repo
+
+    def _profile_for_user(self, user):
+        """Một customer_profile / user — dùng CustomersRepository (unique user_id + xử lý race)."""
+        customers = CustomersRepository(self.orders_repo.session)
+        return customers.get_or_create_profile(
+            user_id=user.id,
+            full_name=user.full_name,
+            email=user.email,
+            phone=user.phone,
+        )
 
     def _resolve_default_location(self):
         if not self.inventory_repo:
@@ -80,9 +108,7 @@ class OrdersService:
         if not user:
             raise ValueError("user_not_found")
 
-        profile = self.orders_repo.get_or_create_customer_profile(
-            user_id=user.id, full_name=user.full_name
-        )
+        profile = self._profile_for_user(user)
 
         addr_payload = payload.get("shipping_address") or {}
         addr = None
@@ -156,6 +182,13 @@ class OrdersService:
             # Re-raise so the controller can return 400 to the customer.
             raise
 
+        # Lưu mốc lịch sử "đặt hàng" để admin/sales nhìn thấy.
+        self.orders_repo.add_status_history(
+            order_id=order.id,
+            status=OrderStatus.placed.value,
+            note="Khách đặt hàng",
+            changed_by_user_id=user.id,
+        )
         return order
 
     def list_orders(self, *, limit: int = 50, offset: int = 0) -> list[OrderModel]:
@@ -168,27 +201,107 @@ class OrdersService:
             raise ValueError("order_not_found")
         return order
 
-    def update_order_status(self, *, order_id: str, status: str) -> OrderModel:
+    def _restock_for_order(self, order: OrderModel, *, reason: str) -> None:
+        """Tr\u1ea3 h\u00e0ng v\u1ec1 kho khi h\u1ee7y/ho\u00e0n. Skip n\u1ebfu kh\u00f4ng c\u00f3 inventory_repo / location."""
+        if not self.inventory_repo:
+            return
+        location = self._resolve_default_location()
+        if not location:
+            return
+        items = order.items or self.orders_repo.get_order_with_details(order.id).items
+        for it in items or []:
+            if not it.variant_id:
+                continue
+            stock = self.inventory_repo.get_stock_item(
+                location_id=location.id, variant_id=it.variant_id
+            )
+            current = int(stock.qty_on_hand or 0) if stock else 0
+            new_on_hand = current + int(it.quantity)
+            self.inventory_repo.upsert_stock_item(
+                location_id=location.id,
+                variant_id=it.variant_id,
+                qty_on_hand=new_on_hand,
+            )
+            self.inventory_repo.create_txn(
+                StockTransactionModel(
+                    txn_type=StockTxnType.in_,
+                    location_id=location.id,
+                    variant_id=it.variant_id,
+                    quantity=int(it.quantity),
+                    note=f"{reason}:{order.code}",
+                )
+            )
+
+    def update_order_status(
+        self,
+        *,
+        order_id: str,
+        status: str,
+        note: str | None = None,
+        actor_user_id: uuid.UUID | None = None,
+    ) -> OrderModel:
         oid = uuid.UUID(order_id)
         order = self.orders_repo.get_order(oid)
         if not order:
             raise ValueError("order_not_found")
-        order.status = OrderStatus(status)
-        return self.orders_repo.update_order(order)
+
+        try:
+            new_status = OrderStatus(status)
+        except ValueError as exc:
+            raise ValueError("invalid_status") from exc
+
+        if new_status == order.status:
+            # ghi nh\u1eadn ghi ch\u00fa nh\u01b0ng kh\u00f4ng \u0111\u1ed5i status
+            if note:
+                self.orders_repo.add_status_history(
+                    order_id=order.id,
+                    status=order.status.value,
+                    note=note,
+                    changed_by_user_id=actor_user_id,
+                )
+            return order
+
+        allowed = ALLOWED_STATUS_TRANSITIONS.get(order.status, set())
+        if new_status not in allowed:
+            raise ValueError("invalid_transition")
+
+        order.status = new_status
+        updated = self.orders_repo.update_order(order)
+        self.orders_repo.add_status_history(
+            order_id=order.id,
+            status=new_status.value,
+            note=note,
+            changed_by_user_id=actor_user_id,
+        )
+
+        if new_status in (OrderStatus.cancelled, OrderStatus.returned):
+            self._restock_for_order(
+                updated,
+                reason="cancel" if new_status == OrderStatus.cancelled else "return",
+            )
+
+        return updated
+
+    def list_order_history(self, order_id: str):
+        oid = uuid.UUID(order_id)
+        order = self.orders_repo.get_order(oid)
+        if not order:
+            raise ValueError("order_not_found")
+        return self.orders_repo.list_status_history(oid)
 
     # Customer ("me")
     def list_my_orders(self, user_id: uuid.UUID, *, limit: int = 50, offset: int = 0) -> list[OrderModel]:
         user = self.rbac_repo.get_user(user_id)
         if not user:
             raise ValueError("user_not_found")
-        profile = self.orders_repo.get_or_create_customer_profile(user_id=user.id, full_name=user.full_name)
+        profile = self._profile_for_user(user)
         return self.orders_repo.list_orders_for_customer(profile.id, limit=limit, offset=offset)
 
     def track_my_order_by_code(self, user_id: uuid.UUID, code: str) -> OrderModel:
         user = self.rbac_repo.get_user(user_id)
         if not user:
             raise ValueError("user_not_found")
-        profile = self.orders_repo.get_or_create_customer_profile(user_id=user.id, full_name=user.full_name)
+        profile = self._profile_for_user(user)
         order = self.orders_repo.get_order_by_code_with_details(code)
         if not order or not order.customer_id:
             raise ValueError("order_not_found")

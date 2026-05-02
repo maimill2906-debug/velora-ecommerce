@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from infrastructure.models.customers_models import (
@@ -19,7 +20,10 @@ class CustomersRepository:
     # Profile
     def get_profile_by_user_id(self, user_id: uuid.UUID) -> CustomerProfileModel | None:
         return self.session.execute(
-            select(CustomerProfileModel).where(CustomerProfileModel.user_id == user_id)
+            select(CustomerProfileModel)
+            .where(CustomerProfileModel.user_id == user_id)
+            .order_by(CustomerProfileModel.created_at.asc())
+            .limit(1)
         ).scalar_one_or_none()
 
     def get_or_create_profile(
@@ -35,7 +39,15 @@ class CustomersRepository:
             return existing
         profile = CustomerProfileModel(user_id=user_id, full_name=full_name, email=email, phone=phone)
         self.session.add(profile)
-        self.session.flush()
+        try:
+            with self.session.begin_nested():
+                self.session.flush()
+        except IntegrityError:
+            self.session.expunge(profile)
+            existing = self.get_profile_by_user_id(user_id)
+            if existing:
+                return existing
+            raise
         return profile
 
     def update_profile(

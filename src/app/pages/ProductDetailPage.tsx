@@ -15,6 +15,7 @@ import {
   AccordionTrigger,
 } from '../components/ui/accordion';
 import { apiFetch } from '@/lib/apiClient';
+import { getColorBackground, isLightColor } from '@/lib/colors';
 
 type BackendProduct = {
   id: string;
@@ -79,6 +80,15 @@ export function ProductDetailPage() {
   );
   const images = useMemo(() => (product?.images || []).map((i) => i.url).filter(Boolean), [product]);
   const displayImages = images.length ? images : ['https://images.unsplash.com/photo-1520975682031-a6ad2f1c2f9b?auto=format&fit=crop&w=900&q=80'];
+
+  /** \u1ea2nh \u0111\u01b0\u1ee3c seed theo th\u1ee9 t\u1ef1 c\u00f9ng v\u1edbi th\u1ee9 t\u1ef1 m\u00e0u xu\u1ea5t hi\u1ec7n trong variants \u2192 map color \u2192 index. */
+  const colorImageIndex = useMemo(() => {
+    const map: Record<string, number> = {};
+    colors.forEach((c, i) => {
+      if (i < displayImages.length) map[c] = i;
+    });
+    return map;
+  }, [colors, displayImages]);
   const selectedVariant = useMemo(() => {
     const variants = product?.variants || [];
     if (!variants.length) return null;
@@ -208,7 +218,6 @@ export function ProductDetailPage() {
                 src={displayImages[activeImage] || displayImages[0]}
                 alt={product.name}
                 className="w-full h-full object-cover"
-                style={{ filter: 'grayscale(100%)' }}
               />
             </div>
             {displayImages.length > 1 && (
@@ -225,7 +234,6 @@ export function ProductDetailPage() {
                       src={img}
                       alt={`${product.name} ${idx + 1}`}
                       className="w-full h-full object-cover"
-                      style={{ filter: 'grayscale(100%)' }}
                     />
                   </button>
                 ))}
@@ -292,20 +300,29 @@ export function ProductDetailPage() {
               <p className="text-xs uppercase tracking-wider font-medium mb-3">
                 Màu sắc: <span className="text-muted-foreground">{currentColor}</span>
               </p>
-              <div className="flex gap-2 flex-wrap">
-                {colors.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setSelectedColor(color)}
-                    className={`px-4 py-2 border text-sm transition-all ${
-                      currentColor === color
-                        ? 'border-black bg-black text-white'
-                        : 'border-border hover:border-black'
-                    }`}
-                  >
-                    {color}
-                  </button>
-                ))}
+              <div className="flex gap-3 flex-wrap">
+                {colors.map((color) => {
+                  const active = currentColor === color;
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => {
+                        setSelectedColor(color);
+                        const imgIdx = colorImageIndex[color];
+                        if (typeof imgIdx === 'number') setActiveImage(imgIdx);
+                      }}
+                      title={color}
+                      aria-label={color}
+                      className={`relative w-9 h-9 rounded-full transition-all ring-offset-2 ${
+                        active
+                          ? 'ring-2 ring-black'
+                          : 'ring-1 ring-border hover:ring-black'
+                      } ${isLightColor(color) ? 'border border-border' : ''}`}
+                      style={{ background: getColorBackground(color) }}
+                    />
+                  );
+                })}
               </div>
             </div>
 

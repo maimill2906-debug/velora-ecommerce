@@ -104,3 +104,23 @@ class PaymentModel(Base, UUIDPrimaryKeyMixin):
 
     order: Mapped["OrderModel"] = relationship(back_populates="payments")
 
+
+class OrderStatusHistoryModel(Base, UUIDPrimaryKeyMixin):
+    """Audit log m\u1ed7i l\u1ea7n \u0111\u1ed5i status \u0111\u01a1n h\u00e0ng (admin/sales). Note l\u01b0u t\u1ea1i sao."""
+
+    __tablename__ = "order_status_history"
+
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orders.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[OrderStatus] = mapped_column(
+        Enum(OrderStatus, name="order_status"), nullable=False
+    )
+    note: Mapped[str | None] = mapped_column(String(1000))
+    changed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id")
+    )
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+

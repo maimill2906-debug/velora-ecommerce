@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy import func, select
 
 from api.auth import require_auth, require_function
 from domain.constants import FunctionCodes
 from infrastructure.databases.session import session_scope
+from infrastructure.models.catalog_models import ProductModel, ProductVariantModel
+from infrastructure.models.inventory_models import StockItemModel
 from infrastructure.repositories.inventory_repository import InventoryRepository
 from services.inventory_service import InventoryService
 
@@ -85,6 +88,43 @@ def list_stock_txns():
                     "created_at": t.created_at.isoformat() if t.created_at else None,
                 }
                 for t in txns
+            ]
+        )
+
+
+@bp.get("/stock-summary")
+@require_auth
+@require_function(FunctionCodes.INVENTORY_READ)
+def stock_summary():
+    """T\u1ed5ng t\u1ed3n on-hand & reserved theo t\u1eebng s\u1ea3n ph\u1ea9m (g\u1ed9p qua m\u1ecdi variant + m\u1ecdi kho)."""
+    with session_scope() as session:
+        rows = session.execute(
+            select(
+                ProductModel.id,
+                ProductModel.sku,
+                ProductModel.name,
+                func.count(func.distinct(ProductVariantModel.id)).label("variant_count"),
+                func.coalesce(func.sum(StockItemModel.qty_on_hand), 0).label("qty_on_hand"),
+                func.coalesce(func.sum(StockItemModel.qty_reserved), 0).label("qty_reserved"),
+            )
+            .select_from(ProductModel)
+            .join(ProductVariantModel, ProductVariantModel.product_id == ProductModel.id, isouter=True)
+            .join(StockItemModel, StockItemModel.variant_id == ProductVariantModel.id, isouter=True)
+            .group_by(ProductModel.id, ProductModel.sku, ProductModel.name)
+            .order_by(ProductModel.sku)
+        ).all()
+        return jsonify(
+            [
+                {
+                    "product_id": str(r.id),
+                    "sku": r.sku,
+                    "name": r.name,
+                    "variant_count": int(r.variant_count or 0),
+                    "qty_on_hand": int(r.qty_on_hand or 0),
+                    "qty_reserved": int(r.qty_reserved or 0),
+                    "qty_available": int((r.qty_on_hand or 0) - (r.qty_reserved or 0)),
+                }
+                for r in rows
             ]
         )
 

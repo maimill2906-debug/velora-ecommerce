@@ -62,6 +62,7 @@ export function CheckoutPage() {
   const [orderCode] = useState(`VL${Date.now().toString().slice(-7)}`);
   const [backendOrderId, setBackendOrderId] = useState<string | null>(null);
 
+  /** Chỉ các field map tới `addresses` (full_name, phone, line1, ward, district, province, country; line2 = ghi chú). Email thuộc `customer_profiles`, không nằm trong địa chỉ. */
   const initialShipping = useMemo(() => {
     try {
       const raw = localStorage.getItem('velora_checkout_shipping_v1');
@@ -69,7 +70,6 @@ export function CheckoutPage() {
         return {
           fullName: '',
           phone: '',
-          email: '',
           province: '',
           district: '',
           ward: '',
@@ -81,7 +81,6 @@ export function CheckoutPage() {
       return {
         fullName: String(parsed.fullName || ''),
         phone: String(parsed.phone || ''),
-        email: String(parsed.email || ''),
         province: String(parsed.province || ''),
         district: String(parsed.district || ''),
         ward: String(parsed.ward || ''),
@@ -92,7 +91,6 @@ export function CheckoutPage() {
       return {
         fullName: '',
         phone: '',
-        email: '',
         province: '',
         district: '',
         ward: '',
@@ -103,6 +101,8 @@ export function CheckoutPage() {
   }, []);
 
   const [shipping, setShipping] = useState(initialShipping);
+  /** Email tài khoản (customer_profiles) — chỉ hiển thị, cập nhật tại Hồ sơ */
+  const [accountEmail, setAccountEmail] = useState('');
 
   useEffect(() => {
     try {
@@ -113,13 +113,12 @@ export function CheckoutPage() {
   }, [shipping]);
 
   useEffect(() => {
-    // Prefill from my profile if logged in
     apiFetch<any>('/customers/me', { auth: true })
       .then((p) => {
+        setAccountEmail(typeof p.email === 'string' ? p.email : '');
         setShipping((prev) => ({
           ...prev,
           fullName: prev.fullName || p.full_name || '',
-          email: prev.email || p.email || '',
           phone: prev.phone || p.phone || '',
         }));
       })
@@ -175,6 +174,7 @@ export function CheckoutPage() {
           full_name: shipping.fullName,
           phone: shipping.phone,
           line1: shipping.address,
+          line2: shipping.note.trim() || undefined,
           ward: shipping.ward,
           district: shipping.district,
           province: shipping.province,
@@ -310,7 +310,6 @@ export function CheckoutPage() {
                 src={item.image}
                 alt={item.title}
                 className="w-full h-full object-cover"
-                style={{ filter: 'grayscale(100%)' }}
               />
             </div>
             <div className="flex-1 min-w-0">
@@ -423,7 +422,16 @@ export function CheckoutPage() {
           </Card>
 
           <div className="bg-secondary p-6 mb-8 text-sm text-muted-foreground">
-            <p className="mb-2">📧 Email xác nhận đã được gửi đến <strong>{shipping.email || 'email của bạn'}</strong></p>
+            <p className="mb-2">
+              📧 Thông báo đơn hàng sẽ gửi tới email trong tài khoản
+              {accountEmail ? (
+                <>
+                  : <strong>{accountEmail}</strong>
+                </>
+              ) : (
+                <> (cập nhật email tại Hồ sơ)</>
+              )}
+            </p>
             <p>📦 Dự kiến giao hàng trong <strong>2-4 ngày làm việc</strong></p>
           </div>
 
@@ -473,6 +481,22 @@ export function CheckoutPage() {
                     Thông tin giao hàng
                   </h2>
 
+                  <div className="rounded-md border border-border bg-secondary/50 p-4 text-sm mb-2">
+                    <p className="font-medium text-foreground mb-1">Email liên hệ (hồ sơ khách hàng)</p>
+                    <p className="text-muted-foreground">
+                      {accountEmail || 'Chưa có email trên hồ sơ — '}
+                      <Link to="/profile" className="text-foreground underline underline-offset-2">
+                        Cập nhật tại Hồ sơ
+                      </Link>
+                      {accountEmail ? (
+                        <span className="block mt-2 font-mono text-foreground">{accountEmail}</span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Địa chỉ giao hàng không lưu email — theo schema API chỉ có họ tên, SĐT và địa chỉ.
+                    </p>
+                  </div>
+
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -499,18 +523,6 @@ export function CheckoutPage() {
                           className="border-black"
                         />
                       </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        placeholder="example@email.com"
-                        value={shipping.email}
-                        onChange={(e) => setShipping({ ...shipping, email: e.target.value })}
-                        className="border-black"
-                      />
                     </div>
 
                     <div className="space-y-2">
@@ -582,14 +594,17 @@ export function CheckoutPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="note">Ghi chú đơn hàng</Label>
+                      <Label htmlFor="note">Ghi chú giao hàng (tùy chọn)</Label>
                       <Input
                         id="note"
-                        placeholder="Ghi chú thêm (không bắt buộc)"
+                        placeholder="Ví dụ: gọi trước khi giao — lưu vào địa chỉ (dòng phụ)"
                         value={shipping.note}
                         onChange={(e) => setShipping({ ...shipping, note: e.target.value })}
                         className="border-black"
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Được lưu cùng địa chỉ giao hàng (dòng phụ).
+                      </p>
                     </div>
                   </div>
                 </div>

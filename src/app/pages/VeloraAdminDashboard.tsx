@@ -152,6 +152,62 @@ interface InventoryRow {
   qty_available: number;
 }
 
+/** GET /reports/summary — doanh thu / kênh thật từ DB */
+interface ReportsSummary {
+  quarter: { year: number; quarter: number; label: string };
+  quarter_metrics: {
+    revenue: number;
+    order_count: number;
+    avg_order_value: number;
+    return_rate_pct: number;
+    revenue_change_pct: number | null;
+    orders_change_pct: number | null;
+    avg_order_change_pct: number | null;
+  };
+  months_chart: Array<{
+    key: string;
+    name: string;
+    website: number;
+    store: number;
+    shopee: number;
+    lazada: number;
+    tiktok: number;
+    unassigned: number;
+  }>;
+  channels: Array<{
+    code: string;
+    name: string;
+    revenue: number;
+    orders: number;
+    percent: number;
+  }>;
+  pie_chart: Array<{ code: string; name: string; value: number }>;
+  top_products: Array<{
+    product_id: string;
+    name: string;
+    sku: string;
+    qty_sold: number;
+    revenue: number;
+  }>;
+  customers: {
+    profiles_count: number;
+    new_this_month: number;
+    buyers_count: number;
+    repeat_buyers: number;
+    retention_pct: number;
+    ltv_avg_revenue_per_buyer: number;
+  };
+}
+
+const PIE_FILL_BY_CODE: Record<string, string> = {
+  online: '#111111',
+  pos: '#9ca3af',
+  shopee: '#ee4d2d',
+  lazada: '#0f146d',
+  tiktok_shop: '#000000',
+  unassigned: '#d1d5db',
+};
+
 const ORDER_STATUS_LABELS: Record<string, string> = {
   draft: 'Nháp',
   placed: 'Đã đặt',
@@ -176,6 +232,8 @@ const NEXT_STATUSES: Record<string, string[]> = {
 };
 
 const VND = (n: number) => `${Number(n || 0).toLocaleString('vi-VN')}₫`;
+const fmtPctDelta = (v: number | null | undefined) =>
+  v === null || v === undefined ? '—' : `${v >= 0 ? '+' : ''}${v}%`;
 const formatDateVN = (iso: string | null) => {
   if (!iso) return '—';
   try {
@@ -213,6 +271,9 @@ export function VeloraAdminDashboard() {
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(true);
   const [inventorySearch, setInventorySearch] = useState('');
+
+  const [reportSummary, setReportSummary] = useState<ReportsSummary | null>(null);
+  const [reportsLoading, setReportsLoading] = useState(true);
 
   useEffect(() => {
     setProductsLoading(true);
@@ -277,6 +338,18 @@ export function VeloraAdminDashboard() {
     reloadInventory();
   }, []);
 
+  const reloadReports = () => {
+    setReportsLoading(true);
+    apiFetch<ReportsSummary>('/reports/summary?months=6', { auth: true })
+      .then((data) => setReportSummary(data))
+      .catch(() => setReportSummary(null))
+      .finally(() => setReportsLoading(false));
+  };
+
+  useEffect(() => {
+    reloadReports();
+  }, []);
+
   useEffect(() => {
     setCustomersLoading(true);
     apiFetch<any[]>('/admin/users?limit=200', { auth: true })
@@ -298,39 +371,77 @@ export function VeloraAdminDashboard() {
   }, []);
 
   const revenueData = useMemo(() => {
+    const rows = reportSummary?.months_chart;
+    if (rows?.length) {
+      return rows.map((r) => ({
+        id: `month-${r.key}`,
+        key: r.key,
+        name: r.name,
+        website: r.website,
+        store: r.store,
+        shopee: r.shopee,
+        lazada: r.lazada,
+        tiktok: r.tiktok,
+        unassigned: r.unassigned,
+      }));
+    }
     const now = new Date();
-    const buckets: Array<{ id: string; name: string; website: number; shopee: number; store: number; key: string }> = [];
+    const fallback: Array<{
+      id: string;
+      key: string;
+      name: string;
+      website: number;
+      store: number;
+      shopee: number;
+      lazada: number;
+      tiktok: number;
+      unassigned: number;
+    }> = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      buckets.push({ id: `month-${key}`, name: monthShort[d.getMonth()], website: 0, shopee: 0, store: 0, key });
+      fallback.push({
+        id: `month-${key}`,
+        key,
+        name: monthShort[d.getMonth()],
+        website: 0,
+        store: 0,
+        shopee: 0,
+        lazada: 0,
+        tiktok: 0,
+        unassigned: 0,
+      });
     }
-    for (const o of orders) {
-      if (!o.rawDate) continue;
-      const k = o.rawDate.slice(0, 7);
-      const b = buckets.find((x) => x.key === k);
-      if (b) b.website += o.total || 0;
-    }
-    return buckets;
-  }, [orders]);
+    return fallback;
+  }, [reportSummary]);
 
   const channelPieData = useMemo(() => {
-    const total = orders.reduce((s, o) => s + (o.total || 0), 0) || 1;
-    return [
-      { id: 'channel-website', name: 'Website', value: 100, fill: '#000000' },
-      { id: 'channel-other', name: 'Khác', value: 0, fill: '#888888' },
-    ].map((x) => ({ ...x, value: x.value }));
-    void total;
-  }, [orders]);
+    const raw = reportSummary?.pie_chart || [];
+    const positive = raw.filter((p) => p.value > 0);
+    if (!positive.length) {
+      return [{ id: 'empty', code: 'empty', name: 'Chưa có doanh thu', value: 100, fill: '#e5e7eb' }];
+    }
+    return positive.map((p) => ({
+      id: p.code,
+      code: p.code,
+      name: p.name,
+      value: p.value,
+      fill: PIE_FILL_BY_CODE[p.code] || '#6b7280',
+    }));
+  }, [reportSummary]);
 
   const topProducts = useMemo(() => {
-    return products.slice(0, 4).map((p, i) => ({
-      id: `prod-${i}`,
-      name: p.name,
-      sold: p.sold || 0,
-      revenue: (p.sold || 0) * (p.price || 0),
-    }));
-  }, [products]);
+    const tp = reportSummary?.top_products;
+    if (tp?.length) {
+      return tp.map((p) => ({
+        id: p.product_id,
+        name: p.name,
+        sold: Number(p.qty_sold) || 0,
+        revenue: Number(p.revenue) || 0,
+      }));
+    }
+    return [];
+  }, [reportSummary]);
 
   const lowStockItems = useMemo(() => {
     return inventory
@@ -400,6 +511,7 @@ export function VeloraAdminDashboard() {
       if (status === 'cancelled' || status === 'returned') {
         reloadInventory();
       }
+      reloadReports();
     } catch (e: any) {
       toast.error(`Lỗi cập nhật: ${e?.message || ''}`);
     } finally {
@@ -416,6 +528,7 @@ export function VeloraAdminDashboard() {
       });
       setOrders((arr) => arr.map((o) => (o.id === orderId ? { ...o, status: 'confirmed' } : o)));
       toast.success('Đã xác nhận đơn');
+      reloadReports();
     } catch (e: any) {
       toast.error(`Lỗi xác nhận: ${e?.message || ''}`);
     }
@@ -433,6 +546,7 @@ export function VeloraAdminDashboard() {
       setOrders((arr) => arr.map((o) => (o.id === orderId ? { ...o, status: 'cancelled' } : o)));
       toast.success('Đã hủy đơn — đã hoàn kho');
       reloadInventory();
+      reloadReports();
     } catch (e: any) {
       toast.error(`Lỗi hủy đơn: ${e?.message || ''}`);
     }
@@ -587,15 +701,15 @@ export function VeloraAdminDashboard() {
                   const ymKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                   const monthOrders = orders.filter((o) => (o.rawDate || '').startsWith(ymKey));
                   const monthRevenue = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
-                  const newCustomers = customers.filter((c) => {
-                    if (!c.joinDate || c.joinDate === '—') return false;
-                    return true;
-                  }).length;
                   return [
-                    { label: 'Doanh thu tháng', value: VND(monthRevenue), change: ordersLoading ? '...' : `${monthOrders.length} đơn`, up: true },
-                    { label: 'Đơn hàng tháng', value: String(monthOrders.length), change: `Tổng ${orders.length}`, up: true },
-                    { label: 'Tổng khách hàng', value: String(newCustomers), change: customersLoading ? '...' : `${customers.filter((c) => c.orders > 0).length} đã mua`, up: true },
-                    { label: 'Sản phẩm', value: String(products.length), change: productsLoading ? '...' : `${products.filter((p) => p.status === 'active').length} đang bán`, up: true },
+                    { label: 'Doanh thu tháng', value: VND(monthRevenue), change: ordersLoading ? 'Đang tải đơn…' : `${monthOrders.length} đơn trong tháng (danh sách đơn)` },
+                    { label: 'Đơn hàng tháng', value: String(monthOrders.length), change: ordersLoading ? '…' : `Tổng ${orders.length} đơn đã load` },
+                    {
+                      label: 'Người dùng (admin)',
+                      value: String(customers.length),
+                      change: customersLoading ? '…' : `${customers.filter((c) => c.orders > 0).length} có phát sinh đơn (theo API users)`,
+                    },
+                    { label: 'Sản phẩm catalog', value: String(products.length), change: productsLoading ? '…' : `${products.filter((p) => p.status === 'active').length} đang bán` },
                   ];
                 })().map((stat, i) => (
                   <Card key={i} className="velora-card">
@@ -608,10 +722,7 @@ export function VeloraAdminDashboard() {
                       <p className="text-3xl velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
                         {stat.value}
                       </p>
-                      <p className={`text-xs mt-1 flex items-center gap-1 ${stat.up ? 'text-green-600' : 'text-red-600'}`}>
-                        {stat.up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                        {stat.change} so với tháng trước
-                      </p>
+                      <p className="text-xs mt-1 text-muted-foreground flex items-center gap-1">{stat.change}</p>
                     </CardContent>
                   </Card>
                 ))}
@@ -620,7 +731,8 @@ export function VeloraAdminDashboard() {
               <Card className="velora-card">
                 <CardHeader>
                   <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                    Doanh thu theo kênh (6 tháng gần nhất)
+                    Doanh thu theo kênh (6 tháng — dữ liệu thật){' '}
+                    {reportsLoading && <span className="text-xs font-normal text-muted-foreground">Đang tải…</span>}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -631,9 +743,12 @@ export function VeloraAdminDashboard() {
                       <YAxis stroke="#666" tickFormatter={(v) => `${(v / 1000000).toFixed(0)}tr`} />
                       <Tooltip formatter={(v: number) => v.toLocaleString('vi-VN') + '₫'} />
                       <Legend wrapperStyle={{ paddingTop: '10px' }} />
-                      <Line type="monotone" dataKey="website" stroke="#000" strokeWidth={2} name="Website" dot={false} />
-                      <Line type="monotone" dataKey="shopee" stroke="#555" strokeWidth={2} name="Shopee" dot={false} />
-                      <Line type="monotone" dataKey="store" stroke="#aaa" strokeWidth={2} name="Cửa hàng" dot={false} />
+                      <Line type="monotone" dataKey="website" stroke="#111111" strokeWidth={2} name="Website" dot={false} />
+                      <Line type="monotone" dataKey="shopee" stroke="#ee4d2d" strokeWidth={2} name="Shopee" dot={false} />
+                      <Line type="monotone" dataKey="store" stroke="#9ca3af" strokeWidth={2} name="POS / cửa hàng" dot={false} />
+                      <Line type="monotone" dataKey="lazada" stroke="#0f146d" strokeWidth={2} name="Lazada" dot={false} />
+                      <Line type="monotone" dataKey="tiktok" stroke="#000000" strokeWidth={2} name="TikTok Shop" dot={false} />
+                      <Line type="monotone" dataKey="unassigned" stroke="#d1d5db" strokeWidth={2} name="Chưa gán kênh" dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -643,26 +758,32 @@ export function VeloraAdminDashboard() {
                 <Card className="velora-card lg:col-span-2">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Sản phẩm bán chạy
+                      Top sản phẩm (theo đơn thật){' '}
+                      {reportsLoading && <span className="text-xs font-normal text-muted-foreground">Đang tải…</span>}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <BarChart data={topProducts} layout="vertical" id="top-products-bar-chart">
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                        <XAxis type="number" stroke="#666" />
-                        <YAxis dataKey="name" type="category" stroke="#666" width={130} tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Bar dataKey="sold" fill="#000" name="Đã bán" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    {!reportsLoading && topProducts.length === 0 ? (
+                      <p className="text-sm text-muted-foreground py-16 text-center">Chưa có đơn hợp lệ — không có dữ liệu bán.</p>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={topProducts.slice(0, 8)} layout="vertical" id="top-products-bar-chart">
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                          <XAxis type="number" stroke="#666" />
+                          <YAxis dataKey="name" type="category" stroke="#666" width={130} tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Bar dataKey="sold" fill="#000" name="Đã bán" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
                   </CardContent>
                 </Card>
 
                 <Card className="velora-card">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Tỷ lệ kênh
+                      Tỷ lệ doanh thu theo kênh (thật){' '}
+                      {reportsLoading && <span className="text-xs font-normal text-muted-foreground">Đang tải…</span>}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -670,7 +791,7 @@ export function VeloraAdminDashboard() {
                       <PieChart id="channel-pie-chart">
                         <Pie data={channelPieData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, value }) => `${name} ${value}%`}>
                           {channelPieData.map((entry) => (
-                            <Cell key={entry.id} fill={entry.fill} />
+                            <Cell key={entry.id} fill={(entry as { fill?: string }).fill ?? '#e5e7eb'} />
                           ))}
                         </Pie>
                         <Tooltip formatter={(v: number) => v + '%'} />
@@ -1519,35 +1640,70 @@ export function VeloraAdminDashboard() {
           {/* ──────────────── REPORTS ──────────────── */}
           {activeTab === 'reports' && (
             <div className="space-y-6">
-              {/* Report Summary */}
+              <div className="flex justify-end">
+                <Button variant="outline" className="border-black" type="button" onClick={reloadReports} disabled={reportsLoading}>
+                  {reportsLoading ? 'Đang tải…' : 'Làm mới báo cáo'}
+                </Button>
+              </div>
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: 'Doanh thu Q2/2026', value: '303.000.000₫', change: '+14%', up: true },
-                  { label: 'Đơn hàng Q2/2026', value: '1.247', change: '+9%', up: true },
-                  { label: 'Giá trị đơn TB', value: '243.000₫', change: '+4%', up: true },
-                  { label: 'Tỷ lệ hoàn hàng', value: '2.1%', change: '-0.3%', up: false },
-                ].map((stat, i) => (
-                  <Card key={i} className="velora-card">
-                    <CardContent className="p-4">
-                      <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">{stat.label}</p>
-                      <p className="text-xl velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                        {stat.value}
-                      </p>
-                      <p className={`text-xs mt-1 flex items-center gap-1 ${stat.up ? 'text-green-600' : 'text-red-600'}`}>
-                        {stat.up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                        {stat.change} so với Q1
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
+                {(() => {
+                  const qm = reportSummary?.quarter_metrics;
+                  const ql = reportSummary?.quarter?.label ?? '—';
+                  const stats = [
+                    {
+                      label: `Doanh thu ${ql}`,
+                      value: qm ? VND(qm.revenue) : reportsLoading ? '…' : '0₫',
+                      sub: qm ? `${fmtPctDelta(qm.revenue_change_pct)} so với quý trước` : '—',
+                      up: (qm?.revenue_change_pct ?? 0) >= 0,
+                    },
+                    {
+                      label: `Đơn hàng ${ql}`,
+                      value: qm ? String(qm.order_count) : reportsLoading ? '…' : '0',
+                      sub: qm ? `${fmtPctDelta(qm.orders_change_pct)} so với quý trước` : '—',
+                      up: (qm?.orders_change_pct ?? 0) >= 0,
+                    },
+                    {
+                      label: 'Giá trị đơn TB',
+                      value: qm ? VND(qm.avg_order_value) : reportsLoading ? '…' : '0₫',
+                      sub: qm ? `${fmtPctDelta(qm.avg_order_change_pct)} so với quý trước` : '—',
+                      up: (qm?.avg_order_change_pct ?? 0) >= 0,
+                    },
+                    {
+                      label: 'Tỷ lệ hoàn hàng',
+                      value: qm ? `${qm.return_rate_pct}%` : reportsLoading ? '…' : '0%',
+                      sub: 'Trên đơn hợp lệ trong quý (không tính draft / hủy)',
+                      up: true,
+                    },
+                  ];
+                  return stats.map((stat, i) => (
+                    <Card key={i} className="velora-card">
+                      <CardContent className="p-4">
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">{stat.label}</p>
+                        <p className="text-xl velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
+                          {stat.value}
+                        </p>
+                        <p className={`text-xs mt-1 flex items-center gap-1 ${stat.up ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
+                          {stat.label.includes('hoàn hàng') ? (
+                            stat.sub
+                          ) : (
+                            <>
+                              {stat.up ? <TrendingUp className="h-3 w-3 text-green-600" /> : <TrendingDown className="h-3 w-3 text-red-600" />}
+                              <span>{stat.sub}</span>
+                            </>
+                          )}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ));
+                })()}
               </div>
 
               <div className="grid lg:grid-cols-2 gap-6">
-                {/* Revenue by month */}
                 <Card className="velora-card">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Doanh thu theo tháng
+                      Doanh thu theo tháng (stack theo kênh — thật)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -1557,62 +1713,54 @@ export function VeloraAdminDashboard() {
                         <XAxis dataKey="name" stroke="#666" />
                         <YAxis stroke="#666" tickFormatter={(v) => `${(v / 1000000).toFixed(0)}tr`} />
                         <Tooltip formatter={(v: number) => v.toLocaleString('vi-VN') + '₫'} />
-                        <Bar dataKey="website" fill="#000" stackId="a" name="Website" />
-                        <Bar dataKey="shopee" fill="#555" stackId="a" name="Shopee" />
-                        <Bar dataKey="store" fill="#aaa" stackId="a" name="Cửa hàng" />
+                        <Legend />
+                        <Bar dataKey="website" fill="#111111" stackId="a" name="Website" />
+                        <Bar dataKey="shopee" fill="#ee4d2d" stackId="a" name="Shopee" />
+                        <Bar dataKey="store" fill="#9ca3af" stackId="a" name="POS / cửa hàng" />
+                        <Bar dataKey="lazada" fill="#0f146d" stackId="a" name="Lazada" />
+                        <Bar dataKey="tiktok" fill="#000000" stackId="a" name="TikTok Shop" />
+                        <Bar dataKey="unassigned" fill="#d1d5db" stackId="a" name="Chưa gán kênh" />
                       </BarChart>
                     </ResponsiveContainer>
                   </CardContent>
                 </Card>
 
-                {/* Channel breakdown */}
                 <Card className="velora-card">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Phân tích theo kênh
+                      Phân tích theo kênh (đủ slot — kênh chưa có đơn = 0)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {[
-                        { channel: 'Website', revenue: 328000000, orders: 687, percent: 45 },
-                        { channel: 'Shopee', revenue: 219000000, orders: 374, percent: 30 },
-                        { channel: 'Cửa hàng (Store)', revenue: 183000000, orders: 186, percent: 25 },
-                      ].map((item) => (
-                        <div key={item.channel}>
+                      {(reportSummary?.channels ?? []).map((item) => (
+                        <div key={item.code}>
                           <div className="flex justify-between text-sm mb-2">
-                            <span className="font-medium">{item.channel}</span>
+                            <span className="font-medium">{item.name}</span>
                             <span className="text-muted-foreground">
                               {item.revenue.toLocaleString('vi-VN')}₫ · {item.orders} đơn
                             </span>
                           </div>
                           <div className="h-2 bg-secondary rounded-none">
-                            <div
-                              className="h-full bg-black"
-                              style={{ width: `${item.percent}%` }}
-                            />
+                            <div className="h-full bg-black" style={{ width: `${item.percent}%` }} />
                           </div>
                           <p className="text-xs text-right text-muted-foreground mt-1">{item.percent}%</p>
                         </div>
                       ))}
+                      {!reportsLoading && (!reportSummary?.channels || reportSummary.channels.length === 0) && (
+                        <p className="text-sm text-muted-foreground">Chưa có dữ liệu kênh.</p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
               <div className="grid lg:grid-cols-2 gap-6">
-                {/* Top products */}
                 <Card className="velora-card">
                   <CardHeader>
-                    <div className="flex justify-between items-center">
-                      <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                        Top sản phẩm bán chạy
-                      </CardTitle>
-                      <Button variant="outline" size="sm" className="border-black text-xs">
-                        <Download className="h-3 w-3 mr-1" />
-                        Xuất
-                      </Button>
-                    </div>
+                    <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
+                      Top sản phẩm (theo đơn đã ghi nhận)
+                    </CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
                     <Table>
@@ -1626,50 +1774,64 @@ export function VeloraAdminDashboard() {
                       </TableHeader>
                       <TableBody>
                         {topProducts.map((p, i) => (
-                          <TableRow key={i}>
+                          <TableRow key={p.id}>
                             <TableCell className="text-muted-foreground font-mono">
                               {String(i + 1).padStart(2, '0')}
                             </TableCell>
                             <TableCell className="font-medium">{p.name}</TableCell>
                             <TableCell className="text-right">{p.sold}</TableCell>
-                            <TableCell className="text-right">
-                              {p.revenue.toLocaleString('vi-VN')}₫
-                            </TableCell>
+                            <TableCell className="text-right">{p.revenue.toLocaleString('vi-VN')}₫</TableCell>
                           </TableRow>
                         ))}
+                        {!reportsLoading && topProducts.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                              Chưa có đơn hàng hợp lệ — không có top sản phẩm.
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </CardContent>
                 </Card>
 
-                {/* Customer analysis */}
                 <Card className="velora-card">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Phân tích khách hàng
+                      Khách hàng (snapshot DB)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-6">
-                      {[
-                        { label: 'Khách hàng mới', value: 89, change: '+15%', up: true },
-                        { label: 'Khách hàng quay lại', value: 145, change: '+8%', up: true },
-                        { label: 'Tỷ lệ giữ chân (Retention)', value: '62%', change: '+3%', up: true },
-                        { label: 'Giá trị vòng đời (LTV)', value: '1.240.000₫', change: '+12%', up: true },
-                      ].map((metric) => (
-                        <div key={metric.label} className="flex justify-between items-center pb-4 border-b last:border-0">
-                          <div>
-                            <p className="text-sm font-medium">{metric.label}</p>
-                            <p className={`text-xs flex items-center gap-1 ${metric.up ? 'text-green-600' : 'text-red-600'}`}>
-                              {metric.up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                              {metric.change} so với tháng trước
-                            </p>
+                      {(() => {
+                        const c = reportSummary?.customers;
+                        const rows = [
+                          { label: 'Profile khách hàng', value: c ? String(c.profiles_count) : reportsLoading ? '…' : '0', sub: 'Tổng dòng customer_profiles' },
+                          { label: 'Khách mới (tháng này)', value: c ? String(c.new_this_month) : reportsLoading ? '…' : '0', sub: 'Theo created_at profile' },
+                          { label: 'Khách đã có đơn', value: c ? String(c.buyers_count) : reportsLoading ? '…' : '0', sub: 'Distinct customer_id trên đơn hợp lệ' },
+                          {
+                            label: 'Khách mua lại (≥2 đơn)',
+                            value: c ? String(c.repeat_buyers) : reportsLoading ? '…' : '0',
+                            sub: `Retention (ước lượng): ${c ? `${c.retention_pct}%` : '—'}`,
+                          },
+                          {
+                            label: 'TB doanh thu / khách đã mua',
+                            value: c ? VND(c.ltv_avg_revenue_per_buyer) : reportsLoading ? '…' : '0₫',
+                            sub: 'SUM đơn hợp lệ ÷ số khách đã mua',
+                          },
+                        ];
+                        return rows.map((metric) => (
+                          <div key={metric.label} className="flex justify-between items-center pb-4 border-b last:border-0">
+                            <div>
+                              <p className="text-sm font-medium">{metric.label}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{metric.sub}</p>
+                            </div>
+                            <span className="velora-heading text-xl" style={{ fontFamily: 'var(--font-heading)' }}>
+                              {metric.value}
+                            </span>
                           </div>
-                          <span className="velora-heading text-xl" style={{ fontFamily: 'var(--font-heading)' }}>
-                            {metric.value}
-                          </span>
-                        </div>
-                      ))}
+                        ));
+                      })()}
                     </div>
                   </CardContent>
                 </Card>

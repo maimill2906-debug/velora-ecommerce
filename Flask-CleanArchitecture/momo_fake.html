@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MoMo — Thanh toán</title>
+  <style>
+    :root {
+      --momo:    #ae2070;
+      --momo-dk: #8b1959;
+      --momo-lt: #f9e8f0;
+      --ok:      #e8f5e9;
+      --ok-bd:   #c8e6c9;
+      --err:     #ffebee;
+      --err-bd:  #ffcdd2;
+      --muted:   #666;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .wrap { width: 100%; max-width: 400px; }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .logo { font-size: 1.4rem; font-weight: 900; color: var(--momo); }
+    .badge {
+      font-size: 0.68rem; font-weight: 700;
+      padding: 2px 7px; border-radius: 4px; color: #fff;
+    }
+    .badge-fake    { background: var(--momo); }
+    .badge-sandbox { background: #555; }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 24px 20px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.08);
+      text-align: center;
+    }
+
+    .qr-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--momo-dk);
+      margin-bottom: 16px;
+    }
+
+    .qr-box {
+      display: inline-block;
+      background: #fff;
+      padding: 10px;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.12);
+      margin-bottom: 16px;
+      line-height: 0;
+    }
+    .qr-box img { display: block; width: 240px; height: 240px; border-radius: 4px; }
+    .qr-loading {
+      width: 240px; height: 240px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; color: var(--muted);
+    }
+
+    .qr-amount { font-size: 1.6rem; font-weight: 800; color: var(--momo); margin-bottom: 4px; }
+    .qr-order  { font-size: 0.82rem; color: var(--muted); margin-bottom: 2px; }
+    .qr-timer  { font-size: 0.75rem; color: #999; font-variant-numeric: tabular-nums; margin-bottom: 20px; }
+
+    /* token fallback — chỉ hiện khi cần */
+    .token-fallback {
+      display: none;
+      margin-bottom: 14px;
+      text-align: left;
+    }
+    .token-fallback label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+    .token-fallback textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1.5px solid var(--momo);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      resize: vertical;
+      min-height: 54px;
+      font-family: monospace;
+      outline: none;
+    }
+    .token-fallback p {
+      font-size: 0.72rem;
+      color: #aaa;
+      margin: 4px 0 0;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-confirm { background: var(--momo); color: #fff; }
+
+    .result {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      line-height: 1.65;
+      display: none;
+      text-align: left;
+    }
+    .result.ok  { background: var(--ok);  border: 1px solid var(--ok-bd);  display: block; }
+    .result.err { background: var(--err); border: 1px solid var(--err-bd); display: block; }
+
+    .checkmark { font-size: 2rem; display: block; margin-bottom: 6px; text-align: center; }
+    .order-chip {
+      display: inline-block;
+      background: var(--momo-lt);
+      border: 1px solid #e8a0c4;
+      color: var(--momo-dk);
+      font-size: 0.8rem;
+      padding: 2px 10px;
+      border-radius: 99px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <span class="logo">MoMo</span>
+    <span class="badge badge-fake">FAKE</span>
+    <span class="badge badge-sandbox">SANDBOX</span>
+  </div>
+
+  <div class="card">
+    <div class="qr-label">Quét mã để thanh toán</div>
+
+    <div class="qr-box">
+      <img id="qr_image" src="" alt="QR thanh toán" style="display:none;" />
+      <div id="qr_loading" class="qr-loading">Đang tải QR…</div>
+    </div>
+
+    <div class="qr-amount" id="qr_amount">— ₫</div>
+    <div class="qr-order"  id="qr_order">Đơn hàng: —</div>
+    <div class="qr-timer">Mã hết hạn sau: <span id="countdown">05:00</span></div>
+
+    <!-- Hiện khi không có token từ URL (demo thủ công) -->
+    <div class="token-fallback" id="token_fallback">
+      <label>JWT Token (để xác nhận thanh toán)</label>
+      <textarea id="token_input" placeholder="Dán token từ đăng nhập vào đây…"></textarea>
+      <p>Lấy token: đăng nhập → <code>POST /auth/login</code> → copy field <code>token</code></p>
+    </div>
+
+    <button class="btn btn-confirm" id="btn_confirm" type="button">✓ Xác nhận đã thanh toán</button>
+    <div id="result" class="result"></div>
+  </div>
+
+</div>
+<script>
+  const API = "http://localhost:9999";
+
+  function fmtVND(n) {
+    const num = parseInt(n, 10);
+    return isNaN(num) ? "— ₫" : num.toLocaleString("vi-VN") + " ₫";
+  }
+
+  /* --- đọc URL params --- */
+  const p = new URLSearchParams(window.location.search);
+  const _orderId   = p.get("order_id")   || "";
+  const _amount    = p.get("amount")     || "";
+  const _orderCode = p.get("order_code") || _orderId;
+  const _returnUrl = p.get("return_url") || "";
+  let   _token     = p.get("token")      || "";
+
+  /* --- nếu không có token từ URL → hiện ô nhập thủ công --- */
+  if (!_token) {
+    document.getElementById("token_fallback").style.display = "block";
+  }
+
+  /* --- cập nhật label --- */
+  document.getElementById("qr_amount").textContent = fmtVND(_amount);
+  document.getElementById("qr_order").textContent  = "Đơn hàng: " + (_orderCode || "—");
+
+  /* --- tải QR từ VietQR --- */
+  (function loadQR() {
+    if (!_orderId || !_amount) {
+      document.getElementById("qr_loading").textContent = "Thiếu thông tin đơn hàng.";
+      return;
+    }
+    const note  = encodeURIComponent(("Don hang " + _orderCode).slice(0, 25));
+    const qrUrl = `https://img.vietqr.io/image/TCB-29062004555-compact2.png?amount=${parseInt(_amount,10)}&addInfo=${note}&accountName=VELORA+FASHION`;
+    const img    = document.getElementById("qr_image");
+    const loader = document.getElementById("qr_loading");
+    img.onload  = () => { loader.style.display = "none"; img.style.display = "block"; };
+    img.onerror = () => { loader.textContent = "Không tải được QR. Kiểm tra kết nối mạng."; };
+    img.src = qrUrl;
+  })();
+
+  /* --- countdown --- */
+  let timer = null;
+  (function startCountdown() {
+    let remaining = 5 * 60;
+    const el = document.getElementById("countdown");
+    function tick() {
+      const m = String(Math.floor(remaining / 60)).padStart(2, "0");
+      const s = String(remaining % 60).padStart(2, "0");
+      el.textContent = m + ":" + s;
+      if (remaining <= 0) { clearInterval(timer); el.textContent = "Hết hạn"; el.style.color = "#c00"; }
+      remaining--;
+    }
+    tick();
+    timer = setInterval(tick, 1000);
+  })();
+
+  /* --- xác nhận thanh toán --- */
+  document.getElementById("btn_confirm").addEventListener("click", async function () {
+    const btn      = this;
+    const resultEl = document.getElementById("result");
+
+    /* lấy token từ URL param hoặc ô nhập thủ công */
+    const token = _token || document.getElementById("token_input").value.trim();
+
+    if (!token) {
+      document.getElementById("token_fallback").style.display = "block";
+      document.getElementById("token_input").focus();
+      document.getElementById("token_input").style.borderColor = "#ae2070";
+      resultEl.className = "result err";
+      resultEl.textContent = "⚠ Vui lòng nhập JWT Token để xác nhận thanh toán.";
+      return;
+    }
+    if (!_orderId) {
+      resultEl.className = "result err";
+      resultEl.textContent = "Thiếu Order ID. Vui lòng vào lại từ trang thanh toán.";
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Đang xử lý…";
+    resultEl.className = "result";
+    resultEl.textContent = "";
+
+    try {
+      const r = await fetch(API + "/orders/" + encodeURIComponent(_orderId) + "/payment-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ payment_status: "paid", payment_method: "momo" }),
+      });
+      const j = await r.json();
+
+      if (!r.ok) {
+        resultEl.className = "result err";
+        resultEl.textContent = "Lỗi: " + (j.message || r.status);
+        return;
+      }
+
+      clearInterval(timer);
+      const cd = document.getElementById("countdown");
+      cd.textContent = "Đã thanh toán";
+      cd.style.color = "#2e7d32";
+
+      /* ẩn ô token sau khi thành công */
+      document.getElementById("token_fallback").style.display = "none";
+
+      resultEl.className = "result ok";
+      resultEl.innerHTML =
+        `<span class="checkmark">✅</span>` +
+        `<div style="text-align:center"><div class="order-chip">${j.order_code || _orderCode}</div></div>` +
+        `<br/><strong>Thanh toán thành công!</strong><br/>` +
+        `Số tiền: <strong>${fmtVND(j.amount)}</strong><br/>` +
+        `Phương thức: <strong>MoMo</strong><br/>` +
+        `Trạng thái đơn: <strong>${j.order_status}</strong><br/>` +
+        (j.paid_at ? `Thời gian: <strong>${new Date(j.paid_at).toLocaleString("vi-VN")}</strong>` : "") +
+        (_returnUrl
+          ? `<br/><br/><a href="${_returnUrl}" style="display:block;text-align:center;padding:11px 0;background:#ae2070;color:#fff;text-decoration:none;border-radius:10px;font-weight:700;">← Quay về theo dõi đơn hàng</a>`
+          : "");
+
+    } catch (e) {
+      resultEl.className = "result err";
+      resultEl.textContent = "Lỗi mạng: " + e;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "✓ Xác nhận đã thanh toán";
+    }
+  });
+</script>
+</body>
+</html>

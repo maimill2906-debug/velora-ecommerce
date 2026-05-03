@@ -1,9 +1,10 @@
 /** Path prefixes reserved for staff consoles + allowed user_type values (admin sees all). */
 const STAFF_RULES: { prefix: string; roles: readonly string[] }[] = [
-  { prefix: '/admin', roles: ['admin'] },
+  { prefix: '/admin',   roles: ['admin'] },
   { prefix: '/marketing', roles: ['admin', 'marketing'] },
   { prefix: '/warehouse', roles: ['admin', 'warehouse'] },
-  { prefix: '/pos', roles: ['admin', 'sales'] },
+  { prefix: '/sales',  roles: ['admin', 'sales'] },
+  { prefix: '/pos',    roles: ['admin', 'sales'] },
 ]
 
 export function pathOnly(url: string): string {
@@ -25,7 +26,7 @@ export function defaultStaffHome(userType: string | null | undefined): string {
     case 'warehouse':
       return '/warehouse'
     case 'sales':
-      return '/pos'
+      return '/sales'
     default:
       return '/'
   }

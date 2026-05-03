@@ -19,7 +19,7 @@ import {
 } from '../components/ui/select';
 import { CheckCircle, ChevronRight, Truck, CreditCard, Wallet } from 'lucide-react';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
-import { apiFetch } from '@/lib/apiClient';
+import { apiFetch, getAuthToken } from '@/lib/apiClient';
 
 type Step = 'shipping' | 'payment' | 'confirm';
 type PaymentMethod = 'cod' | 'momo' | 'zalopay' | 'bank' | 'card';
@@ -205,8 +205,23 @@ export function CheckoutPage() {
       } catch {
         // ignore storage errors
       }
-      setOrderPlaced(true);
       clearCart();
+
+      if (paymentMethod === 'momo') {
+        const returnUrl = `${window.location.origin}/order-tracking?code=${encodeURIComponent(res.code || orderCode)}`;
+        const momoUrl = new URL('http://localhost:9999/momo/fake');
+        momoUrl.searchParams.set('order_id', res.id);
+        momoUrl.searchParams.set('amount', String(total));
+        momoUrl.searchParams.set('order_code', res.code || orderCode);
+        momoUrl.searchParams.set('return_url', returnUrl);
+        const token = getAuthToken();
+        if (token) momoUrl.searchParams.set('token', token);
+        toast.success('Đặt hàng thành công! Đang chuyển sang MoMo...');
+        window.location.href = momoUrl.toString();
+        return;
+      }
+
+      setOrderPlaced(true);
       setStep('confirm');
       window.scrollTo(0, 0);
       toast.success('Đặt hàng thành công!');
@@ -482,18 +497,17 @@ export function CheckoutPage() {
                   </h2>
 
                   <div className="rounded-md border border-border bg-secondary/50 p-4 text-sm mb-2">
-                    <p className="font-medium text-foreground mb-1">Email liên hệ (hồ sơ khách hàng)</p>
                     <p className="text-muted-foreground">
-                      {accountEmail || 'Chưa có email trên hồ sơ — '}
+                      Email liên hệ:{' '}
+                      {accountEmail ? (
+                        <span className="font-medium text-foreground">{accountEmail}</span>
+                      ) : (
+                        'Chưa có email'
+                      )}
+                      {' — '}
                       <Link to="/profile" className="text-foreground underline underline-offset-2">
                         Cập nhật tại Hồ sơ
                       </Link>
-                      {accountEmail ? (
-                        <span className="block mt-2 font-mono text-foreground">{accountEmail}</span>
-                      ) : null}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Địa chỉ giao hàng không lưu email — theo schema API chỉ có họ tên, SĐT và địa chỉ.
                     </p>
                   </div>
 

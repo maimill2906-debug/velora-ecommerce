@@ -13,6 +13,7 @@ import { VeloraHomePage } from "./pages/VeloraHomePage";
 import { VeloraShopPage } from "./pages/VeloraShopPage";
 import { VeloraAdminDashboard } from "./pages/VeloraAdminDashboard";
 import { POSPage } from "./pages/POSPage";
+import { SalesDashboardPage } from "./pages/SalesDashboardPage";
 import { WarehousePage } from "./pages/WarehousePage";
 import { OrderTrackingPage } from "./pages/OrderTrackingPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -73,6 +74,14 @@ export const router = createBrowserRouter([
     element: (
       <StaffRouteGuard allow={["admin"]}>
         <VeloraAdminDashboard />
+      </StaffRouteGuard>
+    ),
+  },
+  {
+    path: "/sales",
+    element: (
+      <StaffRouteGuard allow={["sales"]}>
+        <SalesDashboardPage />
       </StaffRouteGuard>
     ),
   },

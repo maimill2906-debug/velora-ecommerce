@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shopee fake — đặt hàng demo</title>
+  <style>
+    :root {
+      --shopee: #ee4d2d;
+      --bg: #f5f5f5;
+      --card: #fff;
+      --text: #222;
+      --muted: #666;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .wrap { max-width: 480px; margin: 0 auto; }
+    h1 {
+      font-size: 1.25rem;
+      margin: 0 0 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      background: var(--shopee);
+      color: #fff;
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    p.sub { color: var(--muted); font-size: 0.88rem; margin: 0 0 20px; }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    }
+
+    /* ---- fields ---- */
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 5px; color: var(--muted); letter-spacing: .02em; }
+    input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.97rem;
+      outline: none;
+      transition: border .15s;
+    }
+    input:focus { border-color: var(--shopee); }
+
+    /* ---- optional fields ---- */
+    .extra { display: flex; gap: 10px; }
+    .extra .field { flex: 1; }
+    .optional-label { font-size: 0.75rem; color: #aaa; font-weight: 400; margin-left: 4px; }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--shopee);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: opacity .15s;
+    }
+    button:hover { opacity: .92; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* ---- stock panel ---- */
+    .stock-panel {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #fafafa;
+      border: 1px solid #eee;
+      font-size: 0.93rem;
+      display: flex;
+      gap: 0;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .stock-row { display: flex; justify-content: space-between; align-items: center; }
+    .stock-row span { color: var(--muted); }
+    .stock-row strong { font-size: 1rem; }
+    .arrow { text-align: center; color: #ccc; font-size: 1.1rem; margin: 2px 0; }
+
+    /* ---- result ---- */
+    .result {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 8px;
+      background: #e8f5e9;
+      border: 1px solid #c8e6c9;
+      font-size: 0.93rem;
+      display: none;
+      line-height: 1.6;
+    }
+    .result.err { background: #ffebee; border-color: #ffcdd2; }
+    .result.visible { display: block; }
+
+    /* ---- order id chip ---- */
+    .order-chip {
+      display: inline-block;
+      background: #fff3e0;
+      border: 1px solid #ffe0b2;
+      color: #e65100;
+      font-size: 0.8rem;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    code { font-size: 0.8rem; background: #eee; padding: 2px 6px; border-radius: 4px; }
+    .divider { border: none; border-top: 1px solid #eee; margin: 16px 0; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="badge">FAKE</span> Đặt hàng Shopee</h1>
+  <p class="sub">Gửi webhook tới <code>http://localhost:9999/webhook/shopee/order</code></p>
+
+  <div class="card">
+
+    <!-- Thông tin sản phẩm -->
+    <div class="field">
+      <label>product_id</label>
+      <input id="product_id" type="text" value="1" placeholder="1 hoặc UUID" />
+    </div>
+    <div class="field">
+      <label>quantity</label>
+      <input id="quantity" type="number" min="1" value="1" />
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Thông tin người mua (optional — cho demo đẹp hơn) -->
+    <div class="field">
+      <label>buyer_username <span class="optional-label">optional</span></label>
+      <input id="buyer" type="text" value="nguyen_van_a" placeholder="Tên tài khoản Shopee" />
+    </div>
+    <div class="extra">
+      <div class="field">
+        <label>payment_method <span class="optional-label">optional</span></label>
+        <input id="payment" type="text" value="VNPAY" />
+      </div>
+      <div class="field">
+        <label>shipping_address <span class="optional-label">optional</span></label>
+        <input id="address" type="text" value="123 Nguyễn Huệ, Q1, HCM" />
+      </div>
+    </div>
+
+    <button type="button" id="btn">Đặt hàng Shopee</button>
+
+    <!-- Stock panel: before → after -->
+    <div class="stock-panel">
+      <div class="stock-row">
+        <span>Tồn kho trước đặt hàng</span>
+        <strong id="stock_before">—</strong>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="stock-row">
+        <span>Tồn kho sau đặt hàng</span>
+        <strong id="stock_after">—</strong>
+      </div>
+    </div>
+
+    <div id="result" class="result"></div>
+  </div>
+</div>
+
+<script>
+  const API = "http://localhost:9999";
+
+  // Chỉ fetch stock, trả về số (hoặc null nếu lỗi)
+  async function fetchStock(pid) {
+    try {
+      const r = await fetch(API + "/webhook/shopee/product-stock?product_id=" + encodeURIComponent(pid));
+      const j = await r.json();
+      if (!r.ok) return null;
+      return j.qty_on_hand ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Hiển thị stock_before mỗi khi đổi product_id
+  async function refreshStockBefore() {
+    const pid = document.getElementById("product_id").value.trim();
+    const el = document.getElementById("stock_before");
+    if (!pid) { el.textContent = "—"; return; }
+    el.textContent = "...";
+    const qty = await fetchStock(pid);
+    el.textContent = qty !== null ? String(qty) : "Lỗi";
+  }
+
+  document.getElementById("product_id").addEventListener("change", refreshStockBefore);
+  document.getElementById("product_id").addEventListener("blur", refreshStockBefore);
+
+  document.getElementById("btn").addEventListener("click", async () => {
+    const resultEl = document.getElementById("result");
+    const btn = document.getElementById("btn");
+    const productRaw = document.getElementById("product_id").value.trim();
+    const quantity = parseInt(document.getElementById("quantity").value, 10);
+    const buyer = document.getElementById("buyer").value.trim() || "demo_user";
+    const payment = document.getElementById("payment").value.trim() || "COD";
+    const address = document.getElementById("address").value.trim() || "";
+
+    resultEl.classList.remove("visible", "err");
+    document.getElementById("stock_after").textContent = "—";
+
+    if (!productRaw || !quantity || quantity < 1) {
+      resultEl.textContent = "Nhập product_id và quantity hợp lệ.";
+      resultEl.classList.add("visible", "err");
+      return;
+    }
+
+    // ✅ Snapshot stock_before TRƯỚC khi gọi API đặt hàng
+    const snapshotBefore = await fetchStock(productRaw);
+    document.getElementById("stock_before").textContent =
+      snapshotBefore !== null ? String(snapshotBefore) : "Lỗi";
+
+    const orderId = "SP" + Date.now();
+    const payload = {
+      order_id: orderId,
+      buyer_username: buyer,
+      payment_method: payment,
+      shipping_address: address,
+      items: [{
+        product_id: /^\d+$/.test(productRaw) ? parseInt(productRaw, 10) : productRaw,
+        quantity
+      }]
+    };
+
+    btn.disabled = true;
+    try {
+      const r = await fetch(API + "/webhook/shopee/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+
+      if (!r.ok) {
+        resultEl.textContent = "Lỗi: " + (j.message || r.status);
+        resultEl.classList.add("visible", "err");
+        return;
+      }
+
+      // Lấy previous_stock từ response, fallback về snapshot
+      const prevStock = typeof j.previous_stock === "number" ? j.previous_stock : snapshotBefore;
+      const newStock  = j.new_stock;
+
+      document.getElementById("stock_before").textContent =
+        prevStock !== null ? String(prevStock) : "—";
+      document.getElementById("stock_after").textContent =
+        newStock !== undefined ? String(newStock) : "—";
+
+      resultEl.innerHTML =
+        `<div class="order-chip">${orderId}</div><br/>` +
+        `<strong>Đặt hàng thành công!</strong><br/>` +
+        `Kênh: Shopee &nbsp;|&nbsp; Người mua: <strong>${buyer}</strong><br/>` +
+        `Tồn kho: <strong>${prevStock ?? "—"}</strong> → <strong>${newStock ?? "—"}</strong> ` +
+        `(giảm ${quantity} sản phẩm)`;
+      resultEl.classList.add("visible");
+
+      // ❌ Không gọi refreshStock() ở đây — tránh ghi đè stock_before
+
+    } catch (e) {
+      resultEl.textContent = "Lỗi mạng hoặc CORS: " + e;
+      resultEl.classList.add("visible", "err");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // Load stock_before lần đầu khi mở trang
+  refreshStockBefore();
+</script>
+</body>
+</html>

@@ -7,6 +7,8 @@ from api.controllers.inventory_controller import bp as inventory_bp
 from api.controllers.marketing_controller import bp as marketing_bp
 from api.controllers.orders_controller import bp as orders_bp
 from api.controllers.reports_controller import bp as reports_bp
+from api.controllers.shopee_webhook_controller import bp as shopee_webhook_bp
+from api.controllers.page_controller import bp as page_bp
 
 
 def register_routes(app):
@@ -19,3 +21,5 @@ def register_routes(app):
     app.register_blueprint(marketing_bp)
     app.register_blueprint(orders_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(shopee_webhook_bp)
+    app.register_blueprint(page_bp)

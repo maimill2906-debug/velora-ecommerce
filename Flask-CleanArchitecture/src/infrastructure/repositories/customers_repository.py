@@ -6,11 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from domain.models.enums import UserType
 from infrastructure.models.customers_models import (
     CustomerProfileModel,
     NotificationPreferenceModel,
     WishlistItemModel,
 )
+from infrastructure.models.rbac_models import UserModel
 
 
 class CustomersRepository:
@@ -67,6 +69,36 @@ class CustomersRepository:
         self.session.add(profile)
         self.session.flush()
         return profile
+
+    def list_profiles(self, limit: int = 100, offset: int = 0) -> list[CustomerProfileModel]:
+        """Chỉ trả về profile của khách hàng thực — loại trừ admin/sales/warehouse/marketing."""
+        return (
+            self.session.execute(
+                select(CustomerProfileModel)
+                .outerjoin(UserModel, UserModel.id == CustomerProfileModel.user_id)
+                .where(
+                    (CustomerProfileModel.user_id.is_(None)) |
+                    (UserModel.user_type == UserType.customer)
+                )
+                .order_by(CustomerProfileModel.created_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            .scalars()
+            .all()
+        )
+
+    def count_customers(self) -> int:
+        """Đếm số khách hàng thực (không tính system actors)."""
+        from sqlalchemy import func
+        return self.session.execute(
+            select(func.count()).select_from(CustomerProfileModel)
+            .outerjoin(UserModel, UserModel.id == CustomerProfileModel.user_id)
+            .where(
+                (CustomerProfileModel.user_id.is_(None)) |
+                (UserModel.user_type == UserType.customer)
+            )
+        ).scalar() or 0
 
     # Wishlist
     def list_wishlist(self, customer_id: uuid.UUID) -> list[WishlistItemModel]:

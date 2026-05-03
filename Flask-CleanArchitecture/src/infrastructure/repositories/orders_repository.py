@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -38,6 +39,33 @@ class OrdersRepository:
         self.session.add(p)
         self.session.flush()
         return p
+
+    def get_payment_for_order(self, order_id: uuid.UUID) -> PaymentModel | None:
+        return (
+            self.session.execute(
+                select(PaymentModel)
+                .where(PaymentModel.order_id == order_id)
+                .order_by(PaymentModel.created_at.desc())
+                .limit(1)
+            )
+            .scalar_one_or_none()
+        )
+
+    def update_payment_status(
+        self,
+        payment: PaymentModel,
+        *,
+        status: str,
+        method: str | None = None,
+    ) -> PaymentModel:
+        from domain.models.enums import PaymentMethod, PaymentStatus
+        payment.status = PaymentStatus(status)
+        if method:
+            payment.method = PaymentMethod(method)
+        if PaymentStatus(status) == PaymentStatus.paid:
+            payment.paid_at = datetime.now(timezone.utc)
+        self.session.flush()
+        return payment
 
     def get_address(self, address_id: uuid.UUID) -> AddressModel | None:
         return self.session.get(AddressModel, address_id)
@@ -93,6 +121,26 @@ class OrdersRepository:
                 .order_by(OrderModel.created_at.desc())
                 .limit(limit)
                 .offset(offset)
+            )
+            .unique()
+            .scalars()
+            .all()
+        )
+
+    def list_expired_pending_payment_orders(self, minutes: int = 15) -> list[OrderModel]:
+        """Đơn hàng đã đặt, chưa thanh toán, quá `minutes` phút kể từ placed_at."""
+        from domain.models.enums import OrderStatus, PaymentStatus
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+        return (
+            self.session.execute(
+                select(OrderModel)
+                .join(PaymentModel, PaymentModel.order_id == OrderModel.id)
+                .where(
+                    OrderModel.status == OrderStatus.placed,
+                    PaymentModel.status == PaymentStatus.pending,
+                    OrderModel.placed_at < cutoff,
+                )
+                .options(joinedload(OrderModel.items))
             )
             .unique()
             .scalars()

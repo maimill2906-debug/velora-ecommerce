@@ -76,7 +76,6 @@ class ReportsService:
                 }
             )
 
-        # Kênh cố định — không có đơn hoặc chưa map sales_channel_id ⇒ 0 / chỉ unassigned có phần
         totals_raw = self.repo.channel_totals_all_time()
         rev_by_db = {r["channel"]: int(r["revenue"] or 0) for r in totals_raw}
         cnt_by_db = {r["channel"]: int(r["order_count"] or 0) for r in totals_raw}
@@ -162,3 +161,6 @@ class ReportsService:
                 "ltv_avg_revenue_per_buyer": ltv,
             },
         }
+
+    def customer_behavior_report(self) -> dict:
+        return self.repo.customer_behavior()

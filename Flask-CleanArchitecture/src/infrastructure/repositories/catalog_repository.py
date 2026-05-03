@@ -48,6 +48,21 @@ class CatalogRepository:
     def get_product(self, product_id: uuid.UUID) -> ProductModel | None:
         return self.session.get(ProductModel, product_id)
 
+    def get_product_at_position(self, one_based_index: int) -> ProductModel | None:
+        """Demo: product_id số 1 = sản phẩm cũ nhất (theo created_at tăng dần)."""
+        if one_based_index < 1:
+            return None
+        rows = (
+            self.session.execute(
+                select(ProductModel)
+                .order_by(ProductModel.created_at.asc())
+                .limit(one_based_index)
+            )
+            .scalars()
+            .all()
+        )
+        return rows[one_based_index - 1] if len(rows) >= one_based_index else None
+
     def list_variants(self, product_id: uuid.UUID) -> list[ProductVariantModel]:
         return (
             self.session.execute(

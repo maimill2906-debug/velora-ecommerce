@@ -4,7 +4,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from domain.models.enums import OrderStatus, PaymentMethod, PaymentStatus, StockTxnType
+from domain.models.enums import OrderStatus, PaymentMethod, PaymentStatus, SalesChannel, StockTxnType
 from infrastructure.models.inventory_models import StockTransactionModel
 from infrastructure.models.orders_models import (
     AddressModel,
@@ -12,6 +12,7 @@ from infrastructure.models.orders_models import (
     OrderModel,
     PaymentModel,
 )
+from infrastructure.repositories.channels_repository import ChannelsRepository
 from infrastructure.repositories.customers_repository import CustomersRepository
 from infrastructure.repositories.inventory_repository import InventoryRepository
 from infrastructure.repositories.orders_repository import OrdersRepository
@@ -36,10 +37,12 @@ class OrdersService:
         orders_repo: OrdersRepository,
         rbac_repo: RbacRepository,
         inventory_repo: InventoryRepository | None = None,
+        channels_repo: ChannelsRepository | None = None,
     ):
         self.orders_repo = orders_repo
         self.rbac_repo = rbac_repo
         self.inventory_repo = inventory_repo
+        self.channels_repo = channels_repo
 
     def _profile_for_user(self, user):
         """Một customer_profile / user — dùng CustomersRepository (unique user_id + xử lý race)."""
@@ -52,26 +55,54 @@ class OrdersService:
         )
 
     def _resolve_default_location(self):
+        """Backward-compat: dùng cho online orders (main_warehouse)."""
+        return self._resolve_online_location()
+
+    def _resolve_online_location(self):
+        """Kho bán online — env DEFAULT_INVENTORY_LOCATION_CODE → 'main_warehouse' → first."""
         if not self.inventory_repo:
             return None
-        code = os.environ.get("DEFAULT_INVENTORY_LOCATION_CODE")
-        if code:
-            loc = self.inventory_repo.get_location_by_code(code)
-            if loc:
-                return loc
+        code = os.environ.get("DEFAULT_INVENTORY_LOCATION_CODE", "main_warehouse")
+        loc = self.inventory_repo.get_location_by_code(code)
+        if loc:
+            return loc
         locs = self.inventory_repo.list_locations()
         return locs[0] if locs else None
 
-    def _decrement_stock_for_items(self, items: list[dict], order_code: str) -> None:
-        """Auto-deduct stock for variants in an order.
+    def _resolve_pos_location(self, location_id_str: str | None):
+        """Kho POS — ưu tiên location_id từ payload → env POS_STORE_ID → pos_store* → first."""
+        if not self.inventory_repo:
+            return None
+        if location_id_str:
+            try:
+                from infrastructure.models.inventory_models import InventoryLocationModel as _Loc
+                loc = self.inventory_repo.session.get(_Loc, uuid.UUID(location_id_str))
+                if loc:
+                    return loc
+            except (ValueError, Exception):
+                pass
+        code = os.environ.get("POS_STORE_ID", "pos_store_1")
+        loc = self.inventory_repo.get_location_by_code(code)
+        if loc:
+            return loc
+        # Fallback: tìm kho đầu tiên có prefix pos_store
+        for l in self.inventory_repo.list_locations():
+            if l.code.startswith("pos_store"):
+                return l
+        locs = self.inventory_repo.list_locations()
+        return locs[0] if locs else None
 
-        - If no inventory repo or no location available, silently skip.
-        - If a variant doesn't have a stock_item yet, skip (warehouse may be tracked elsewhere).
-        - If insufficient stock, raise ValueError("insufficient_stock").
+    def _decrement_stock_for_items(self, items: list[dict], order_code: str, location=None) -> None:
+        """Auto-deduct stock. location=None → dùng _resolve_online_location (backward-compat).
+
+        - Silently skip nếu không có inventory_repo / không tìm được kho.
+        - Silently skip variant chưa có stock_item (kho chưa nhập lần đầu).
+        - Raise ValueError("insufficient_stock") nếu không đủ hàng.
         """
         if not self.inventory_repo:
             return
-        location = self._resolve_default_location()
+        if location is None:
+            location = self._resolve_online_location()
         if not location:
             return
 
@@ -84,7 +115,6 @@ class OrdersService:
                 location_id=location.id, variant_id=variant_id
             )
             if not stock:
-                # No stock record yet: skip, do not block order creation.
                 continue
             current = int(stock.qty_on_hand or 0)
             if current < qty:
@@ -108,14 +138,24 @@ class OrdersService:
         if not user:
             raise ValueError("user_not_found")
 
-        profile = self._profile_for_user(user)
+        code_str = str(payload.get("code", ""))
+        is_pos = code_str.startswith("POS")
+
+        # Nhân viên (sales, admin, warehouse…) không phải khách hàng của đơn họ tạo.
+        # Chỉ customer user_type mới được gán làm customer_id của đơn hàng.
+        user_type_val = getattr(user.user_type, "value", str(user.user_type))
+        is_staff = user_type_val != "customer"
+
+        # Lấy profile chỉ khi cần (customer đặt hàng online cho chính mình).
+        profile = None if is_staff else self._profile_for_user(user)
+        customer_id_for_order = profile.id if profile else None
 
         addr_payload = payload.get("shipping_address") or {}
         addr = None
         if addr_payload:
             addr = self.orders_repo.create_address(
                 AddressModel(
-                    customer_id=profile.id,
+                    customer_id=customer_id_for_order,
                     full_name=addr_payload.get("full_name") or user.full_name,
                     phone=addr_payload.get("phone") or (user.phone or ""),
                     line1=addr_payload["line1"],
@@ -128,14 +168,29 @@ class OrdersService:
                 )
             )
 
+        initial_status = OrderStatus.delivered if is_pos else OrderStatus.placed
+
+        # Auto-resolve sales_channel_id from code prefix when not supplied by caller.
+        resolved_channel_id: uuid.UUID | None = None
+        if payload.get("sales_channel_id"):
+            resolved_channel_id = uuid.UUID(payload["sales_channel_id"])
+        elif self.channels_repo:
+            if is_pos:
+                ch = self.channels_repo.ensure_channel(SalesChannel.pos, "pos", "Cửa hàng (POS)")
+                resolved_channel_id = ch.id
+            elif code_str.startswith("VL"):
+                ch = self.channels_repo.ensure_channel(SalesChannel.online, "online", "Website")
+                resolved_channel_id = ch.id
+            elif code_str.startswith("SP"):
+                ch = self.channels_repo.ensure_shopee_channel()
+                resolved_channel_id = ch.id
+
         order = self.orders_repo.create_order(
             OrderModel(
                 code=payload["code"],
-                status=OrderStatus.placed,
-                sales_channel_id=uuid.UUID(payload["sales_channel_id"])
-                if payload.get("sales_channel_id")
-                else None,
-                customer_id=profile.id,
+                status=initial_status,
+                sales_channel_id=resolved_channel_id,
+                customer_id=customer_id_for_order,
                 shipping_address_id=addr.id if addr else None,
                 subtotal_amount=int(payload["subtotal_amount"]),
                 discount_amount=int(payload.get("discount_amount", 0)),
@@ -164,31 +219,57 @@ class OrdersService:
                 )
             )
 
-        if payload.get("payment"):
-            pay = payload["payment"]
+        now = datetime.now(timezone.utc)
+        pay_data = payload.get("payment") or {}
+        if is_pos:
+            # POS orders: always mark payment as paid immediately.
             self.orders_repo.create_payment(
                 PaymentModel(
                     order_id=order.id,
-                    method=PaymentMethod(pay.get("method", "cod")),
+                    method=PaymentMethod(pay_data.get("method", "cod")),
+                    status=PaymentStatus.paid,
+                    amount=int(payload["total_amount"]),
+                    paid_at=now,
+                )
+            )
+        elif pay_data:
+            self.orders_repo.create_payment(
+                PaymentModel(
+                    order_id=order.id,
+                    method=PaymentMethod(pay_data.get("method", "cod")),
                     status=PaymentStatus.pending,
                     amount=int(payload["total_amount"]),
+                    paid_at=None,
                 )
             )
 
-        # Auto-deduct stock for the items if inventory tracking is wired up.
+        # Resolve kho đúng: POS → kho cửa hàng, online → main_warehouse.
+        if is_pos:
+            stock_location = self._resolve_pos_location(
+                str(payload["location_id"]) if payload.get("location_id") else None
+            )
+        else:
+            stock_location = self._resolve_online_location()
+
         try:
-            self._decrement_stock_for_items(items, order_code=order.code)
+            self._decrement_stock_for_items(items, order_code=order.code, location=stock_location)
         except ValueError:
-            # Re-raise so the controller can return 400 to the customer.
             raise
 
-        # Lưu mốc lịch sử "đặt hàng" để admin/sales nhìn thấy.
-        self.orders_repo.add_status_history(
-            order_id=order.id,
-            status=OrderStatus.placed.value,
-            note="Khách đặt hàng",
-            changed_by_user_id=user.id,
-        )
+        if is_pos:
+            self.orders_repo.add_status_history(
+                order_id=order.id,
+                status=OrderStatus.delivered.value,
+                note="Bán tại cửa hàng (POS) — thanh toán trực tiếp",
+                changed_by_user_id=user.id,
+            )
+        else:
+            self.orders_repo.add_status_history(
+                order_id=order.id,
+                status=OrderStatus.placed.value,
+                note="Khách đặt hàng",
+                changed_by_user_id=user.id,
+            )
         return order
 
     def list_orders(self, *, limit: int = 50, offset: int = 0) -> list[OrderModel]:
@@ -296,6 +377,66 @@ class OrdersService:
             raise ValueError("user_not_found")
         profile = self._profile_for_user(user)
         return self.orders_repo.list_orders_for_customer(profile.id, limit=limit, offset=offset)
+
+    def update_payment_status(
+        self,
+        *,
+        order_id: str,
+        payment_status: str,
+        payment_method: str | None = None,
+    ) -> dict:
+        oid = uuid.UUID(order_id)
+        order = self.orders_repo.get_order_with_details(oid)
+        if not order:
+            raise ValueError("order_not_found")
+
+        payment = self.orders_repo.get_payment_for_order(oid)
+        if not payment:
+            from infrastructure.models.orders_models import PaymentModel
+            from domain.models.enums import PaymentMethod, PaymentStatus
+            method = PaymentMethod(payment_method) if payment_method else PaymentMethod.momo
+            payment = self.orders_repo.create_payment(
+                PaymentModel(
+                    order_id=oid,
+                    method=method,
+                    status=PaymentStatus.pending,
+                    amount=int(order.total_amount),
+                )
+            )
+
+        prev_status = payment.status.value
+        updated = self.orders_repo.update_payment_status(
+            payment,
+            status=payment_status,
+            method=payment_method,
+        )
+        return {
+            "order_id": str(oid),
+            "order_code": order.code,
+            "order_status": order.status.value,
+            "payment_id": str(updated.id),
+            "payment_method": updated.method.value,
+            "payment_status_before": prev_status,
+            "payment_status": updated.status.value,
+            "amount": int(updated.amount),
+            "paid_at": updated.paid_at.isoformat() if updated.paid_at else None,
+        }
+
+    def cancel_expired_pending_orders(self, minutes: int = 15) -> int:
+        """Hủy tất cả đơn có payment pending quá `minutes` phút. Trả về số đơn đã hủy."""
+        orders = self.orders_repo.list_expired_pending_payment_orders(minutes)
+        count = 0
+        for order in orders:
+            try:
+                self.update_order_status(
+                    order_id=str(order.id),
+                    status="cancelled",
+                    note=f"Tự động hủy: chưa thanh toán sau {minutes} phút",
+                )
+                count += 1
+            except ValueError:
+                pass
+        return count
 
     def track_my_order_by_code(self, user_id: uuid.UUID, code: str) -> OrderModel:
         user = self.rbac_repo.get_user(user_id)

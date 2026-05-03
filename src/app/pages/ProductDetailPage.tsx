@@ -30,7 +30,7 @@ type BackendProduct = {
   original_price: number | null;
   images: Array<{ id: string; url: string; sort_order: number }>;
   tags: Array<{ id: string; code: string; label: string }>;
-  variants: Array<{ id: string; variant_sku: string; size: string | null; color: string | null; price: number }>;
+  variants: Array<{ id: string; variant_sku: string; size: string | null; color: string | null; price: number; in_stock?: boolean; qty_on_hand?: number | null }>;
 };
 
 export function ProductDetailPage() {
@@ -140,7 +140,11 @@ export function ProductDetailPage() {
 
   const currentColor = selectedColor || colors[0] || '';
 
+  // undefined → chưa có dữ liệu kho → mặc định còn hàng (tránh block oan)
+  const isOutOfStock = selectedVariant?.in_stock === false;
+
   const handleAddToCart = () => {
+    if (isOutOfStock) return;
     const variantId = selectedVariant?.id;
     const key = `${product.id}:${variantId || 'no-variant'}:${selectedSize || ''}:${selectedColor || ''}`;
     addToCart({
@@ -372,9 +376,15 @@ export function ProductDetailPage() {
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
-                <span className="text-sm text-muted-foreground">
-                  Còn hàng
-                </span>
+                {isOutOfStock ? (
+                  <span className="text-sm text-red-500 font-medium">Hết hàng</span>
+                ) : selectedVariant?.qty_on_hand != null ? (
+                  <span className={`text-sm ${selectedVariant.qty_on_hand <= 5 ? 'text-orange-500' : 'text-muted-foreground'}`}>
+                    Còn {selectedVariant.qty_on_hand} sản phẩm
+                  </span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">Còn hàng</span>
+                )}
               </div>
             </div>
 
@@ -382,10 +392,15 @@ export function ProductDetailPage() {
             <div className="flex gap-4 mb-8">
               <Button
                 onClick={handleAddToCart}
-                className="flex-1 bg-black text-white hover:bg-gray-800 h-14"
+                disabled={isOutOfStock}
+                className={`flex-1 h-14 ${
+                  isOutOfStock
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed hover:bg-gray-200'
+                    : 'bg-black text-white hover:bg-gray-800'
+                }`}
               >
                 <ShoppingBag className="h-5 w-5 mr-2" />
-                Thêm vào giỏ hàng
+                {isOutOfStock ? 'Hết hàng' : 'Thêm vào giỏ hàng'}
               </Button>
               <Button
                 variant="outline"

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Package, TrendingUp, TrendingDown, Search, LogOut, Plus, Minus, RefreshCcw } from 'lucide-react';
+import { Package, TrendingUp, TrendingDown, Search, LogOut, Plus, Minus, RefreshCcw, ArrowRightLeft } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { apiFetch, clearAuthSession, getSessionUserType } from '@/lib/apiClient';
 import { toast } from 'sonner';
 
-const logoImg = 'https://dummyimage.com/240x80/000/fff.png&text=VELORA';
+import { VeloraLogo } from '../components/VeloraLogo';
 
 type Location = { id: string; code: string; name: string };
 
@@ -52,6 +52,18 @@ type ProductBrief = {
 
 const MIN_STOCK = 10;
 
+function stockItemsPath(locationId: string) {
+  const qs = new URLSearchParams({ limit: '2000' });
+  if (locationId) qs.set('location_id', locationId);
+  return `/inventory/stock-items?${qs}`;
+}
+
+function stockTxnsPath(locationId: string) {
+  const qs = new URLSearchParams({ limit: '500' });
+  if (locationId) qs.set('location_id', locationId);
+  return `/inventory/stock-transactions?${qs}`;
+}
+
 export function WarehousePage() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,10 +79,14 @@ export function WarehousePage() {
   // Forms
   const [formIn, setFormIn] = useState({ location_id: '', variant_id: '', quantity: '', note: '' });
   const [formOut, setFormOut] = useState({ location_id: '', variant_id: '', quantity: '', note: '' });
+  const [formTransfer, setFormTransfer] = useState({ from_location_code: '', to_location_code: '', variant_id: '', quantity: '' });
+  const [transferResult, setTransferResult] = useState<{ from_location: string; from_qty: number; to_location: string; to_qty: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const loadAll = async () => {
+  /** locationIdOverride: dùng sau nhập/xuất kho để refetch đúng kho (tránh stale state của selectedLocation). */
+  const loadAll = async (opts?: { locationId?: string }) => {
     setLoading(true);
+    const locFilter = opts?.locationId !== undefined ? opts.locationId : selectedLocation;
     try {
       const [locs, prods] = await Promise.all([
         apiFetch<Location[]>('/inventory/locations', { auth: true }).catch(() => []),
@@ -79,10 +95,9 @@ export function WarehousePage() {
       setLocations(locs || []);
       setProducts((prods || []).map((p: any) => ({ id: p.id, sku: p.sku, name: p.name, variants: p.variants || [] })));
 
-      const locParam = selectedLocation ? `?location_id=${encodeURIComponent(selectedLocation)}` : '';
       const [items, txns] = await Promise.all([
-        apiFetch<StockItem[]>(`/inventory/stock-items${locParam}`, { auth: true }).catch(() => []),
-        apiFetch<Txn[]>(`/inventory/stock-transactions${locParam}`, { auth: true }).catch(() => []),
+        apiFetch<StockItem[]>(stockItemsPath(locFilter), { auth: true }).catch(() => []),
+        apiFetch<Txn[]>(stockTxnsPath(locFilter), { auth: true }).catch(() => []),
       ]);
       setStockItems(items || []);
       setTransactions(txns || []);
@@ -99,10 +114,9 @@ export function WarehousePage() {
   useEffect(() => {
     // re-fetch stock items + txns when location changes
     setLoading(true);
-    const locParam = selectedLocation ? `?location_id=${encodeURIComponent(selectedLocation)}` : '';
     Promise.all([
-      apiFetch<StockItem[]>(`/inventory/stock-items${locParam}`, { auth: true }).catch(() => []),
-      apiFetch<Txn[]>(`/inventory/stock-transactions${locParam}`, { auth: true }).catch(() => []),
+      apiFetch<StockItem[]>(stockItemsPath(selectedLocation), { auth: true }).catch(() => []),
+      apiFetch<Txn[]>(stockTxnsPath(selectedLocation), { auth: true }).catch(() => []),
     ])
       .then(([items, txns]) => {
         setStockItems(items || []);
@@ -214,11 +228,59 @@ export function WarehousePage() {
         }),
       });
       toast.success(type === 'in' ? 'Đã nhập kho' : 'Đã xuất kho');
+      setSelectedLocation(state.location_id);
+      setActiveTab('inventory');
       if (type === 'in') setFormIn({ location_id: '', variant_id: '', quantity: '', note: '' });
       else setFormOut({ location_id: '', variant_id: '', quantity: '', note: '' });
-      await loadAll();
+      await loadAll({ locationId: state.location_id });
     } catch (e: any) {
       toast.error(`Lỗi: ${e?.message || ''}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitTransfer = async () => {
+    if (!formTransfer.from_location_code || !formTransfer.to_location_code) {
+      toast.error('Vui lòng chọn kho nguồn và kho đích');
+      return;
+    }
+    if (formTransfer.from_location_code === formTransfer.to_location_code) {
+      toast.error('Kho nguồn và kho đích không được trùng nhau');
+      return;
+    }
+    if (!formTransfer.variant_id) {
+      toast.error('Vui lòng chọn sản phẩm');
+      return;
+    }
+    const q = Number(formTransfer.quantity);
+    if (!Number.isFinite(q) || q <= 0) {
+      toast.error('Số lượng phải lớn hơn 0');
+      return;
+    }
+    setSubmitting(true);
+    setTransferResult(null);
+    try {
+      const res = await apiFetch<{ status: string; from_location: string; from_qty: number; to_location: string; to_qty: number }>(
+        '/inventory/transfer',
+        {
+          method: 'POST',
+          auth: true,
+          body: JSON.stringify({
+            from_location_code: formTransfer.from_location_code,
+            to_location_code: formTransfer.to_location_code,
+            variant_id: formTransfer.variant_id,
+            quantity: q,
+          }),
+        }
+      );
+      setTransferResult(res);
+      toast.success('Phân phối thành công');
+      setFormTransfer({ from_location_code: '', to_location_code: '', variant_id: '', quantity: '' });
+      await loadAll();
+    } catch (e: any) {
+      const msg = e?.message || '';
+      toast.error(msg === 'insufficient_stock' ? 'Không đủ hàng tại kho nguồn' : `Lỗi: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -241,7 +303,7 @@ export function WarehousePage() {
     <div className="min-h-screen bg-white">
       <header className="h-16 border-b-2 border-black flex items-center justify-between px-6">
         <div className="flex items-center gap-4">
-          <img src={logoImg} alt="VELORA" className="h-10 w-auto" />
+          <VeloraLogo size="small" showSubtitle={false} showUnderline={false} />
           <div className="h-8 w-px bg-border" />
           <h1 className="text-lg uppercase tracking-wider font-medium">Quản lý kho</h1>
         </div>
@@ -343,6 +405,7 @@ export function WarehousePage() {
             <TabsTrigger value="inventory">Tồn kho</TabsTrigger>
             <TabsTrigger value="stock-in">Nhập kho</TabsTrigger>
             <TabsTrigger value="stock-out">Xuất kho</TabsTrigger>
+            <TabsTrigger value="transfer">Phân phối</TabsTrigger>
             <TabsTrigger value="history">Lịch sử</TabsTrigger>
           </TabsList>
 
@@ -560,6 +623,102 @@ export function WarehousePage() {
                     {submitting ? 'Đang xử lý...' : 'Xác nhận xuất kho'}
                   </Button>
                 </form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="transfer">
+            <Card className="velora-card">
+              <CardHeader>
+                <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
+                  Phân phối hàng giữa các kho
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form
+                  className="space-y-4 max-w-2xl"
+                  onSubmit={(e) => { e.preventDefault(); void submitTransfer(); }}
+                >
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Kho nguồn *</Label>
+                      <Select value={formTransfer.from_location_code} onValueChange={(v) => setFormTransfer((s) => ({ ...s, from_location_code: v }))}>
+                        <SelectTrigger className="border-black">
+                          <SelectValue placeholder="Từ kho..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {locations.map((l) => (
+                            <SelectItem key={l.code} value={l.code}>
+                              {l.code} · {l.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Kho đích *</Label>
+                      <Select value={formTransfer.to_location_code} onValueChange={(v) => setFormTransfer((s) => ({ ...s, to_location_code: v }))}>
+                        <SelectTrigger className="border-black">
+                          <SelectValue placeholder="Đến kho..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {locations.map((l) => (
+                            <SelectItem key={l.code} value={l.code}>
+                              {l.code} · {l.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Sản phẩm (variant) *</Label>
+                      <Select value={formTransfer.variant_id} onValueChange={(v) => setFormTransfer((s) => ({ ...s, variant_id: v }))}>
+                        <SelectTrigger className="border-black">
+                          <SelectValue placeholder="Chọn variant" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {renderProductOptions().map((o) => (
+                            <SelectItem key={o.id} value={o.id}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Số lượng *</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={formTransfer.quantity}
+                        onChange={(e) => setFormTransfer((s) => ({ ...s, quantity: e.target.value }))}
+                        className="border-black"
+                      />
+                    </div>
+                  </div>
+
+                  <Button type="submit" disabled={submitting} className="bg-black text-white hover:bg-gray-800">
+                    <ArrowRightLeft className="h-4 w-4 mr-2" />
+                    {submitting ? 'Đang xử lý...' : 'Phân phối'}
+                  </Button>
+                </form>
+
+                {transferResult && (
+                  <div className="mt-6 p-4 bg-green-50 border border-green-300 rounded-md text-sm text-green-800">
+                    <p className="font-semibold mb-1">Phân phối thành công</p>
+                    <p>
+                      <span className="font-medium">{transferResult.from_location}</span> còn{' '}
+                      <span className="font-semibold">{transferResult.from_qty}</span> sản phẩm
+                    </p>
+                    <p>
+                      <span className="font-medium">{transferResult.to_location}</span> có{' '}
+                      <span className="font-semibold">{transferResult.to_qty}</span> sản phẩm
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

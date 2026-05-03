@@ -38,3 +38,15 @@ class FunctionCodes:
     # Marketing
     MARKETING_READ = "MARKETING_READ"
     MARKETING_WRITE = "MARKETING_WRITE"
+
+    # Sale: granular order management
+    ORDER_VIEW_ALL = "order.view_all"
+    ORDER_CONFIRM = "order.confirm"
+    ORDER_PACK = "order.pack"
+    ORDER_CANCEL = "order.cancel"
+    ORDER_CREATE_ONLINE = "order.create_online"
+
+    # Sale: page / chat management
+    PAGE_VIEW_MESSAGES = "page.view_messages"
+    PAGE_REPLY_MESSAGES = "page.reply_messages"
+    PAGE_CREATE_ORDER = "page.create_order"

@@ -58,6 +58,16 @@ def bootstrap_admin():
         (FunctionCodes.INVENTORY_WRITE, "Cập nhật kho"),
         (FunctionCodes.MARKETING_READ, "Xem marketing"),
         (FunctionCodes.MARKETING_WRITE, "Cập nhật marketing"),
+        # Sale: granular order management
+        (FunctionCodes.ORDER_VIEW_ALL, "Xem tất cả đơn hàng"),
+        (FunctionCodes.ORDER_CONFIRM, "Xác nhận đơn hàng"),
+        (FunctionCodes.ORDER_PACK, "Đóng gói đơn hàng"),
+        (FunctionCodes.ORDER_CANCEL, "Hủy đơn hàng"),
+        (FunctionCodes.ORDER_CREATE_ONLINE, "Tạo đơn hàng online"),
+        # Sale: page / chat management
+        (FunctionCodes.PAGE_VIEW_MESSAGES, "Xem tin nhắn page"),
+        (FunctionCodes.PAGE_REPLY_MESSAGES, "Trả lời tin nhắn page"),
+        (FunctionCodes.PAGE_CREATE_ORDER, "Tạo đơn từ tin nhắn"),
     ]
 
     with session_scope() as session:
@@ -89,7 +99,61 @@ def bootstrap_admin():
                 # likely UniqueConstraint violation if already linked
                 session.rollback()
 
-        # 4) Assign admin role to user (idempotent) + promote to admin user_type
+        # 4) Ensure marketing role with limited permissions
+        marketing_fn_codes = {
+            FunctionCodes.MARKETING_READ,
+            FunctionCodes.MARKETING_WRITE,
+            FunctionCodes.CUSTOMER_READ,
+            FunctionCodes.ORDER_READ,
+            FunctionCodes.ORDER_VIEW_ALL,
+        }
+        marketing_role = repo.get_role_by_code("marketing")
+        if not marketing_role:
+            marketing_role = repo.create_role(RoleModel(
+                code="marketing",
+                name="Marketing",
+                description="Xem dữ liệu khách hàng, đơn hàng và quản lý marketing",
+            ))
+        for fn in functions:
+            if fn.code in marketing_fn_codes:
+                try:
+                    repo.assign_function_to_role(marketing_role.id, fn.id)
+                except Exception:
+                    session.rollback()
+
+        # 5) Ensure sales role — xử lý đơn hàng online
+        sales_fn_codes = {
+            FunctionCodes.ORDER_CREATE,
+            FunctionCodes.ORDER_READ,
+            FunctionCodes.ORDER_UPDATE_STATUS,
+            FunctionCodes.CUSTOMER_READ,
+            FunctionCodes.CUSTOMER_UPDATE,
+            # Granular order management
+            FunctionCodes.ORDER_VIEW_ALL,
+            FunctionCodes.ORDER_CONFIRM,
+            FunctionCodes.ORDER_PACK,
+            FunctionCodes.ORDER_CANCEL,
+            FunctionCodes.ORDER_CREATE_ONLINE,
+            # Page / chat management
+            FunctionCodes.PAGE_VIEW_MESSAGES,
+            FunctionCodes.PAGE_REPLY_MESSAGES,
+            FunctionCodes.PAGE_CREATE_ORDER,
+        }
+        sales_role = repo.get_role_by_code("sales")
+        if not sales_role:
+            sales_role = repo.create_role(RoleModel(
+                code="sales",
+                name="Sales",
+                description="Xử lý đơn hàng online: xem, tạo, xác nhận, cập nhật trạng thái và quản lý khách hàng",
+            ))
+        for fn in functions:
+            if fn.code in sales_fn_codes:
+                try:
+                    repo.assign_function_to_role(sales_role.id, fn.id)
+                except Exception:
+                    session.rollback()
+
+        # 6) Assign admin role to user (idempotent) + promote to admin user_type
         try:
             repo.assign_role_to_user(user.id, admin_role.id)
         except Exception:
@@ -102,7 +166,7 @@ def bootstrap_admin():
             {
                 "message": "ok",
                 "user_id": str(user.id),
-                "role": admin_role.code,
+                "roles_seeded": [admin_role.code, marketing_role.code, sales_role.code],
                 "functions": [f.code for f in functions],
             }
         ), 200
@@ -144,6 +208,31 @@ def create_role():
         return jsonify({"id": str(role.id), "code": role.code, "name": role.name}), 201
 
 
+@bp.get("/users")
+@require_auth
+@require_function(FunctionCodes.RBAC_MANAGE)
+def list_rbac_users():
+    """Danh sách user kèm roles đã gán — dùng cho UI phân quyền."""
+    limit  = int(request.args.get("limit", 200))
+    offset = int(request.args.get("offset", 0))
+    with session_scope() as session:
+        repo  = RbacRepository(session)
+        users = repo.list_users(limit=limit, offset=offset)
+        result = []
+        for u in users:
+            roles = repo.list_user_roles(u.id)
+            result.append({
+                "id":        str(u.id),
+                "full_name": u.full_name,
+                "email":     u.email,
+                "phone":     u.phone,
+                "user_type": u.user_type.value if hasattr(u.user_type, "value") else str(u.user_type),
+                "status":    u.status.value    if hasattr(u.status,    "value") else str(u.status),
+                "roles": [{"id": str(r.id), "code": r.code, "name": r.name} for r in roles],
+            })
+        return jsonify(result)
+
+
 @bp.post("/users/<user_id>/roles/<role_id>")
 @require_auth
 @require_function(FunctionCodes.RBAC_MANAGE)
@@ -157,6 +246,18 @@ def assign_role(user_id: str, role_id: str):
         if not role:
             return jsonify({"message": "role_not_found"}), 404
         repo.assign_role_to_user(user.id, role.id)
+        return jsonify({"message": "ok"}), 200
+
+
+@bp.delete("/users/<user_id>/roles/<role_id>")
+@require_auth
+@require_function(FunctionCodes.RBAC_MANAGE)
+def remove_role(user_id: str, role_id: str):
+    with session_scope() as session:
+        repo    = RbacRepository(session)
+        removed = repo.remove_role_from_user(uuid.UUID(user_id), uuid.UUID(role_id))
+        if not removed:
+            return jsonify({"message": "not_found"}), 404
         return jsonify({"message": "ok"}), 200
 
 
@@ -174,6 +275,20 @@ def assign_function(role_id: str, function_id: str):
             return jsonify({"message": "function_not_found"}), 404
         repo.assign_function_to_role(role.id, fn.id)
         return jsonify({"message": "ok"}), 200
+
+
+@bp.get("/roles")
+@require_auth
+@require_function(FunctionCodes.RBAC_MANAGE)
+def list_roles():
+    limit  = int(request.args.get("limit", 200))
+    offset = int(request.args.get("offset", 0))
+    with session_scope() as session:
+        items = RbacRepository(session).list_roles(limit=limit, offset=offset)
+        return jsonify([
+            {"id": str(r.id), "code": r.code, "name": r.name, "description": r.description}
+            for r in items
+        ])
 
 
 @bp.get("/functions")
@@ -218,15 +333,84 @@ def seed_functions():
         (FC.INVENTORY_WRITE, "Cập nhật kho"),
         (FC.MARKETING_READ, "Xem marketing"),
         (FC.MARKETING_WRITE, "Cập nhật marketing"),
+        # Sale: granular order management
+        (FC.ORDER_VIEW_ALL, "Xem tất cả đơn hàng"),
+        (FC.ORDER_CONFIRM, "Xác nhận đơn hàng"),
+        (FC.ORDER_PACK, "Đóng gói đơn hàng"),
+        (FC.ORDER_CANCEL, "Hủy đơn hàng"),
+        (FC.ORDER_CREATE_ONLINE, "Tạo đơn hàng online"),
+        # Sale: page / chat management
+        (FC.PAGE_VIEW_MESSAGES, "Xem tin nhắn page"),
+        (FC.PAGE_REPLY_MESSAGES, "Trả lời tin nhắn page"),
+        (FC.PAGE_CREATE_ORDER, "Tạo đơn từ tin nhắn"),
     ]
 
+    marketing_fn_codes = {
+        FC.MARKETING_READ,
+        FC.MARKETING_WRITE,
+        FC.CUSTOMER_READ,
+        FC.ORDER_READ,
+        FC.ORDER_VIEW_ALL,
+    }
     created = 0
     with session_scope() as session:
         repo = RbacRepository(session)
+        functions = []
         for code, name in seed:
-            if repo.get_function_by_code(code):
+            existing = repo.get_function_by_code(code)
+            if existing:
+                functions.append(existing)
                 continue
-            repo.create_function(FunctionModel(code=code, name=name, description=None))
+            fn = repo.create_function(FunctionModel(code=code, name=name, description=None))
+            functions.append(fn)
             created += 1
-    return jsonify({"message": "ok", "created": created}), 200
+
+        # Ensure marketing role
+        marketing_role = repo.get_role_by_code("marketing")
+        if not marketing_role:
+            marketing_role = repo.create_role(RoleModel(
+                code="marketing",
+                name="Marketing",
+                description="Xem dữ liệu khách hàng, đơn hàng và quản lý marketing",
+            ))
+        for fn in functions:
+            if fn.code in marketing_fn_codes:
+                try:
+                    repo.assign_function_to_role(marketing_role.id, fn.id)
+                except Exception:
+                    session.rollback()
+
+        # Ensure sales role
+        sales_fn_codes = {
+            FC.ORDER_CREATE,
+            FC.ORDER_READ,
+            FC.ORDER_UPDATE_STATUS,
+            FC.CUSTOMER_READ,
+            FC.CUSTOMER_UPDATE,
+            # Granular order management
+            FC.ORDER_VIEW_ALL,
+            FC.ORDER_CONFIRM,
+            FC.ORDER_PACK,
+            FC.ORDER_CANCEL,
+            FC.ORDER_CREATE_ONLINE,
+            # Page / chat management
+            FC.PAGE_VIEW_MESSAGES,
+            FC.PAGE_REPLY_MESSAGES,
+            FC.PAGE_CREATE_ORDER,
+        }
+        sales_role = repo.get_role_by_code("sales")
+        if not sales_role:
+            sales_role = repo.create_role(RoleModel(
+                code="sales",
+                name="Sales",
+                description="Xử lý đơn hàng online: xem, tạo, xác nhận, cập nhật trạng thái và quản lý khách hàng",
+            ))
+        for fn in functions:
+            if fn.code in sales_fn_codes:
+                try:
+                    repo.assign_function_to_role(sales_role.id, fn.id)
+                except Exception:
+                    session.rollback()
+
+    return jsonify({"message": "ok", "created": created, "roles_seeded": ["marketing", "sales"]}), 200
 

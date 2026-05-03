@@ -64,7 +64,7 @@ export const phoneLoginSchema = z.object({
     .max(100, 'Mật khẩu không được quá 100 ký tự'),
 });
 
-// Register validation
+// Register validation (legacy — kept for type compatibility)
 export const registerSchema = z.object({
   name: z.string()
     .trim()
@@ -91,6 +91,54 @@ export const registerSchema = z.object({
     .refine((val) => /^[a-zA-Z\d@$!%*?&]+$/.test(val), 'Mật khẩu chỉ được chứa chữ cái, số và ký tự đặc biệt (@$!%*?&)'),
   confirmPassword: z.string()
     .min(1, 'Vui lòng xác nhận mật khẩu'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Mật khẩu xác nhận không khớp',
+  path: ['confirmPassword'],
+});
+
+const passwordRules = z.string()
+  .min(8, 'Mật khẩu phải có ít nhất 8 ký tự')
+  .max(100, 'Mật khẩu không được quá 100 ký tự')
+  .refine((val) => /[a-z]/.test(val), 'Mật khẩu phải có ít nhất 1 chữ thường (a-z)')
+  .refine((val) => /[A-Z]/.test(val), 'Mật khẩu phải có ít nhất 1 chữ hoa (A-Z)')
+  .refine((val) => /\d/.test(val), 'Mật khẩu phải có ít nhất 1 chữ số (0-9)')
+  .refine((val) => /^[a-zA-Z\d@$!%*?&]+$/.test(val), 'Mật khẩu chỉ được chứa chữ cái, số và ký tự đặc biệt (@$!%*?&)');
+
+// Register by email (no phone required)
+export const emailRegisterSchema = z.object({
+  name: z.string()
+    .trim()
+    .min(2, 'Tên phải có ít nhất 2 ký tự')
+    .max(50, 'Tên không được quá 50 ký tự')
+    .refine((val) => vietnameseNameRegex.test(val), 'Tên chỉ được chứa chữ cái và khoảng trắng')
+    .refine((val) => !val.includes('  '), 'Tên không được chứa nhiều khoảng trắng liên tiếp'),
+  email: z.string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'Vui lòng nhập email')
+    .max(254, 'Email quá dài')
+    .refine((val) => isValidEmail(val), 'Email không hợp lệ'),
+  password: passwordRules,
+  confirmPassword: z.string().min(1, 'Vui lòng xác nhận mật khẩu'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Mật khẩu xác nhận không khớp',
+  path: ['confirmPassword'],
+});
+
+// Register by phone (no email required)
+export const phoneRegisterSchema = z.object({
+  name: z.string()
+    .trim()
+    .min(2, 'Tên phải có ít nhất 2 ký tự')
+    .max(50, 'Tên không được quá 50 ký tự')
+    .refine((val) => vietnameseNameRegex.test(val), 'Tên chỉ được chứa chữ cái và khoảng trắng')
+    .refine((val) => !val.includes('  '), 'Tên không được chứa nhiều khoảng trắng liên tiếp'),
+  phone: z.string()
+    .trim()
+    .min(1, 'Vui lòng nhập số điện thoại')
+    .refine((val) => isValidVietnamesePhone(val), 'Số điện thoại không hợp lệ (phải có định dạng 0XXXXXXXXX hoặc +84XXXXXXXXX)'),
+  password: passwordRules,
+  confirmPassword: z.string().min(1, 'Vui lòng xác nhận mật khẩu'),
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Mật khẩu xác nhận không khớp',
   path: ['confirmPassword'],
@@ -271,6 +319,8 @@ export type LoginFormData = z.infer<typeof loginSchema>;
 export type EmailLoginFormData = z.infer<typeof emailLoginSchema>;
 export type PhoneLoginFormData = z.infer<typeof phoneLoginSchema>;
 export type RegisterFormData = z.infer<typeof registerSchema>;
+export type EmailRegisterFormData = z.infer<typeof emailRegisterSchema>;
+export type PhoneRegisterFormData = z.infer<typeof phoneRegisterSchema>;
 export type ContactFormData = z.infer<typeof contactSchema>;
 export type CheckoutFormData = z.infer<typeof checkoutSchema>;
 export type ProfileFormData = z.infer<typeof profileSchema>;

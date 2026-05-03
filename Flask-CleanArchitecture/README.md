@@ -63,7 +63,7 @@ BƯỚC 2: Tạo môi trường ảo
 BƯỚC 3: Kích hoạt môi trường ảo
   .venv\Scripts\Activate.ps1
 BƯỚC 4: Duy chuyển vào thư mục Flask-CleanArchitecture/src
-  cd Flask-CleanArchitecture/src
+  
 BƯỚC 5: Cài đặt thư viện cần thiết
   pip install -r requirements.txt
 BƯỚC 6: Chạy chương trình

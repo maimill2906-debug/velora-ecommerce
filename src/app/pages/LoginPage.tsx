@@ -12,7 +12,7 @@ import {
   type EmailLoginFormData,
   type PhoneLoginFormData
 } from '../../lib/validations';
-import logoImg from '../../imports/image-1.png';
+import { VeloraLogo } from '../components/VeloraLogo';
 import { apiFetch, setAuthToken, setSessionUserType } from '@/lib/apiClient';
 import { resolvePostLoginNavigate } from '@/lib/roleAccess';
 import { toast } from 'sonner';
@@ -77,11 +77,7 @@ export function LoginPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4">
       {/* Logo */}
       <div className="mb-12">
-        <img
-          src={logoImg}
-          alt="VELORA - MINIMAL FASHION"
-          className="h-32 w-auto"
-        />
+        <VeloraLogo size="large" showSubtitle={false} />
       </div>
 
       {/* Login Form */}

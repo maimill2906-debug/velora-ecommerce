@@ -27,6 +27,7 @@ class Address:
 class Order:
     id: UUID
     code: str  # e.g. "VLxxxxxxx" (frontend generates similarly)
+    channel: str  # e.g. "web", "shopee" — kênh bán (domain string, không phụ thuộc DB)
     customer_id: UUID | None
     status: OrderStatus
 

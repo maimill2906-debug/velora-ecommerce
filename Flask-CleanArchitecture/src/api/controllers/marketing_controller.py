@@ -12,6 +12,35 @@ bp = Blueprint("marketing", __name__, url_prefix="/marketing")
 
 
 # Vouchers
+@bp.get("/vouchers/validate")
+@require_auth
+def validate_voucher():
+    """Kiểm tra mã giảm giá — dùng cho POS/checkout, không cần quyền marketing."""
+    code = request.args.get("code", "").strip().upper()
+    subtotal = int(request.args.get("subtotal", 0))
+    if not code:
+        return jsonify({"message": "code_required"}), 400
+    with session_scope() as session:
+        repo = MarketingRepository(session)
+        v = repo.get_voucher_by_code(code)
+        if not v:
+            return jsonify({"message": "voucher_not_found"}), 404
+        if v.discount_amount:
+            calculated = min(int(v.discount_amount), subtotal)
+        elif v.discount_percent:
+            calculated = int(subtotal * v.discount_percent / 100)
+        else:
+            calculated = 0
+        return jsonify({
+            "id": str(v.id),
+            "code": v.code,
+            "name": v.name,
+            "discount_amount": v.discount_amount,
+            "discount_percent": v.discount_percent,
+            "calculated_discount": calculated,
+        }), 200
+
+
 @bp.get("/vouchers")
 @require_auth
 @require_function(FunctionCodes.MARKETING_READ)

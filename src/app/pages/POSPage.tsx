@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { Search, Minus, Plus, Trash2, LogOut, ShoppingCart, Loader2 } from 'lucide-react';
+import { Search, Minus, Plus, Trash2, LogOut, ShoppingCart, Loader2, User, Tag, X, CheckCircle2, Settings } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -9,8 +9,7 @@ import { Separator } from '../components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { apiFetch, clearAuthSession, getSessionUserType } from '@/lib/apiClient';
 import { toast } from 'sonner';
-const logoImg =
-  'https://dummyimage.com/240x80/000/fff.png&text=VELORA';
+import { VeloraLogo } from '../components/VeloraLogo';
 
 type Location = { id: string; code: string; name: string };
 type VariantRow = {
@@ -36,6 +35,16 @@ type CartItem = {
   quantity: number;
 };
 
+type VoucherInfo = {
+  code: string;
+  name: string;
+  discount_amount: number | null;
+  discount_percent: number | null;
+  calculated_discount: number;
+};
+
+const POS_LOCATION_KEY = 'velora_pos_location_id';
+
 export function POSPage() {
   const navigate = useNavigate();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -43,9 +52,20 @@ export function POSPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [locationId, setLocationId] = useState<string>('');
+  const [locationId, setLocationId] = useState<string>(() => localStorage.getItem(POS_LOCATION_KEY) || '');
+  const [showStoreConfig, setShowStoreConfig] = useState(false);
+  const configRef = useRef<HTMLDivElement>(null);
   const [variants, setVariants] = useState<VariantRow[]>([]);
   const [stockByVariantId, setStockByVariantId] = useState<Map<string, number>>(new Map());
+
+  // Customer info
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+
+  // Voucher
+  const [voucherCode, setVoucherCode] = useState('');
+  const [voucherInfo, setVoucherInfo] = useState<VoucherInfo | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -56,7 +76,17 @@ export function POSPage() {
       .then(([locs, products]) => {
         const ls = locs || [];
         setLocations(ls);
-        setLocationId(ls[0]?.id || '');
+
+        // Kho máy POS: ưu tiên giá trị đã lưu → pos_store* đầu tiên → first location
+        const saved = localStorage.getItem(POS_LOCATION_KEY);
+        const savedValid = saved && ls.some((l) => l.id === saved);
+        if (!savedValid) {
+          const posLoc = ls.find((l) => l.code.startsWith('pos_store')) || ls[0];
+          if (posLoc) {
+            localStorage.setItem(POS_LOCATION_KEY, posLoc.id);
+            setLocationId(posLoc.id);
+          }
+        }
 
         const rows: VariantRow[] = [];
         for (const p of products || []) {
@@ -146,9 +176,54 @@ export function POSPage() {
     setCart(cart.filter(item => item.variant_id !== variantId));
   };
 
+  // Đóng store-config popover khi click ra ngoài
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (configRef.current && !configRef.current.contains(e.target as Node)) {
+        setShowStoreConfig(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const changeStoreLocation = (id: string) => {
+    localStorage.setItem(POS_LOCATION_KEY, id);
+    setLocationId(id);
+    setShowStoreConfig(false);
+  };
+
+  const currentLocation = locations.find((l) => l.id === locationId);
+
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const tax = 0; // Vietnam typically includes VAT in price
-  const total = subtotal + tax;
+  const discountAmount = voucherInfo?.calculated_discount ?? 0;
+  const total = Math.max(0, subtotal - discountAmount);
+
+  const applyVoucher = async () => {
+    const code = voucherCode.trim().toUpperCase();
+    if (!code) return;
+    if (subtotal === 0) { toast.error('Chưa có sản phẩm trong giỏ'); return; }
+    setVoucherLoading(true);
+    try {
+      const res = await apiFetch<VoucherInfo>(
+        `/marketing/vouchers/validate?code=${encodeURIComponent(code)}&subtotal=${subtotal}`,
+        { auth: true }
+      );
+      setVoucherInfo(res);
+      toast.success(`Áp dụng "${res.name}" — giảm ${res.calculated_discount.toLocaleString('vi-VN')}₫`);
+    } catch (e: any) {
+      const msg = e?.message;
+      toast.error(msg === 'voucher_not_found' ? 'Mã giảm giá không hợp lệ' : (msg || 'Lỗi kiểm tra mã'));
+      setVoucherInfo(null);
+    } finally {
+      setVoucherLoading(false);
+    }
+  };
+
+  const removeVoucher = () => {
+    setVoucherInfo(null);
+    setVoucherCode('');
+  };
 
   const handleCheckout = async (paymentMethod: string) => {
     if (cart.length === 0) {
@@ -159,12 +234,14 @@ export function POSPage() {
     setSubmitting(true);
     try {
       const code = `POS${Date.now().toString().slice(-10)}`;
-      const payload = {
+      const hasCustomer = customerName.trim() || customerPhone.trim();
+      const payload: Record<string, unknown> = {
         code,
         subtotal_amount: subtotal,
-        discount_amount: 0,
+        discount_amount: discountAmount,
         shipping_fee: 0,
         total_amount: total,
+        location_id: locationId || undefined,
         items: cart.map((it) => ({
           product_id: it.product_id,
           variant_id: it.variant_id,
@@ -173,6 +250,13 @@ export function POSPage() {
         })),
         payment: { method: paymentMethod },
       };
+      if (hasCustomer) {
+        payload.shipping_address = {
+          full_name: customerName.trim() || 'Khách lẻ',
+          phone: customerPhone.trim() || '',
+          line1: 'Tại cửa hàng',
+        };
+      }
       const res = await apiFetch<{ id: string; code: string; status: string }>('/orders', {
         method: 'POST',
         auth: true,
@@ -180,6 +264,10 @@ export function POSPage() {
       });
       toast.success(`Thanh toán thành công. Mã đơn: ${res.code}`);
       setCart([]);
+      setCustomerName('');
+      setCustomerPhone('');
+      setVoucherInfo(null);
+      setVoucherCode('');
     } catch (e: any) {
       toast.error(e?.message || 'Thanh toán thất bại');
     } finally {
@@ -204,9 +292,41 @@ export function POSPage() {
       {/* Header */}
       <header className="h-16 border-b-2 border-black flex items-center justify-between px-6">
         <div className="flex items-center gap-4">
-          <img src={logoImg} alt="VELORA" className="h-10 w-auto" />
+          <VeloraLogo size="small" showSubtitle={false} showUnderline={false} />
           <Separator orientation="vertical" className="h-8 bg-border" />
           <h1 className="text-lg uppercase tracking-wider font-medium">Point of Sale</h1>
+          {/* Store badge + config */}
+          <div ref={configRef} className="relative flex items-center gap-1">
+            <span className="text-xs font-medium px-2 py-1 border border-black rounded bg-secondary uppercase tracking-wide">
+              {currentLocation ? currentLocation.name : '—'}
+            </span>
+            <button
+              onClick={() => setShowStoreConfig((v) => !v)}
+              className="p-1 text-muted-foreground hover:text-foreground"
+              title="Cấu hình kho máy này"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+            {showStoreConfig && (
+              <div className="absolute top-8 left-0 z-50 bg-white border-2 border-black shadow-lg min-w-[220px]">
+                <div className="px-3 py-2 border-b border-border text-xs font-semibold uppercase text-muted-foreground">
+                  Chọn kho cho máy này
+                </div>
+                {locations
+                  .filter((l) => l.code.startsWith('pos_store'))
+                  .map((l) => (
+                    <button
+                      key={l.id}
+                      onClick={() => changeStoreLocation(l.id)}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-secondary flex items-center justify-between ${l.id === locationId ? 'font-semibold' : ''}`}
+                    >
+                      <span>{l.name}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{l.code}</span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
         </div>
         {getSessionUserType() === 'admin' ? (
           <Button variant="outline" className="border-black" asChild>
@@ -246,22 +366,6 @@ export function POSPage() {
                 className="pl-10 h-12 border-black text-base"
               />
             </div>
-          </div>
-
-          {/* Location */}
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="text-sm text-muted-foreground">Kho xuất</div>
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="h-10 border-2 border-black px-3 text-sm bg-white"
-            >
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} ({l.code})
-                </option>
-              ))}
-            </select>
           </div>
 
           {/* Product Grid */}
@@ -364,6 +468,64 @@ export function POSPage() {
             )}
           </div>
 
+          {/* Customer Info + Voucher */}
+          <div className="border-t border-border px-6 py-4 space-y-3 bg-secondary">
+            {/* Customer */}
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-1">
+              <User className="h-4 w-4" />
+              Thông tin khách (tuỳ chọn)
+            </div>
+            <Input
+              placeholder="Tên khách hàng"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="h-9 border-black text-sm"
+            />
+            <Input
+              placeholder="Số điện thoại"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              className="h-9 border-black text-sm"
+            />
+
+            {/* Voucher */}
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mt-2 mb-1">
+              <Tag className="h-4 w-4" />
+              Mã giảm giá
+            </div>
+            {voucherInfo ? (
+              <div className="flex items-center justify-between bg-green-50 border border-green-300 rounded px-3 py-2 text-sm">
+                <div className="flex items-center gap-2 text-green-700">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="font-medium">{voucherInfo.code}</span>
+                  <span className="text-xs text-muted-foreground">— {voucherInfo.name}</span>
+                </div>
+                <button onClick={removeVoucher} className="text-muted-foreground hover:text-destructive">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Nhập mã giảm giá"
+                  value={voucherCode}
+                  onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => e.key === 'Enter' && applyVoucher()}
+                  className="h-9 border-black text-sm uppercase"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 border-black px-4 shrink-0"
+                  onClick={applyVoucher}
+                  disabled={!voucherCode.trim() || voucherLoading}
+                >
+                  {voucherLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Áp dụng'}
+                </Button>
+              </div>
+            )}
+          </div>
+
           {/* Cart Summary */}
           <div className="border-t-2 border-black p-6 bg-white">
             <div className="space-y-3 mb-6">
@@ -371,10 +533,10 @@ export function POSPage() {
                 <span className="text-muted-foreground">Tạm tính</span>
                 <span className="font-medium">{subtotal.toLocaleString('vi-VN')}₫</span>
               </div>
-              {tax > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Thuế VAT</span>
-                  <span className="font-medium">{tax.toLocaleString('vi-VN')}₫</span>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-sm text-green-600">
+                  <span>Giảm giá ({voucherInfo?.code})</span>
+                  <span className="font-medium">−{discountAmount.toLocaleString('vi-VN')}₫</span>
                 </div>
               )}
               <Separator />

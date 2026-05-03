@@ -1,7 +1,6 @@
 import { Link } from 'react-router';
 import { Separator } from './ui/separator';
-const logoImg =
-  'https://dummyimage.com/240x80/000/fff.png&text=VELORA';
+import { VeloraLogo } from './VeloraLogo';
 
 export function VeloraFooterNew() {
   const currentYear = new Date().getFullYear();
@@ -13,7 +12,7 @@ export function VeloraFooterNew() {
         <div className="py-16 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
           {/* Brand Column */}
           <div className="space-y-6">
-            <img src={logoImg} alt="VELORA FASHION" className="h-16 w-auto" />
+            <VeloraLogo size="small" showSubtitle={false} showUnderline={false} />
             <p className="text-sm leading-relaxed text-muted-foreground">
               Thời trang cao cấp, phong cách tối giản. 
               VELORA mang đến những thiết kế tinh tế cho người hiện đại.

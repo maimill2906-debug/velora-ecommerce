@@ -8,7 +8,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/apiClient';
-import logoImg from '../../imports/image-1.png';
+import { VeloraLogo } from '../components/VeloraLogo';
 
 const forgotPasswordSchema = z.object({
   identifier: z
@@ -98,7 +98,7 @@ export function ForgotPasswordPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4">
         <div className="mb-12">
-          <img src={logoImg} alt="VELORA" className="h-32 w-auto" />
+          <VeloraLogo size="large" showSubtitle={false} />
         </div>
         <div className="w-full max-w-md text-center">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -123,7 +123,7 @@ export function ForgotPasswordPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 py-10">
       <div className="mb-12">
-        <img src={logoImg} alt="VELORA - MINIMAL FASHION" className="h-32 w-auto" />
+        <VeloraLogo size="large" showSubtitle={false} />
       </div>
 
       <div className="w-full max-w-md">

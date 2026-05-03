@@ -77,6 +77,16 @@ class InventoryRepository:
             .all()
         )
 
+    def get_stock_all_locations(self, variant_id: uuid.UUID) -> dict[str, int]:
+        """Trả về dict {location_code: qty_on_hand} cho tất cả kho có chứa variant này."""
+        rows = self.session.execute(
+            select(InventoryLocationModel.code, StockItemModel.qty_on_hand)
+            .join(StockItemModel, StockItemModel.location_id == InventoryLocationModel.id)
+            .where(StockItemModel.variant_id == variant_id)
+            .order_by(InventoryLocationModel.code)
+        ).all()
+        return {row.code: int(row.qty_on_hand) for row in rows}
+
     # Transactions
     def create_txn(self, txn: StockTransactionModel) -> StockTransactionModel:
         self.session.add(txn)

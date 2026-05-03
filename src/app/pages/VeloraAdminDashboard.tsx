@@ -21,6 +21,9 @@ import {
   Eye,
   MoreHorizontal,
   Megaphone,
+  ShieldCheck,
+  UserPlus,
+  X,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -68,11 +71,10 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-const logoImg =
-  'https://dummyimage.com/240x80/000/fff.png&text=VELORA';
 import { toast } from 'sonner';
+import { VeloraLogo } from '../components/VeloraLogo';
 
-type TabValue = 'dashboard' | 'orders' | 'products' | 'inventory' | 'customers' | 'reports';
+type TabValue = 'dashboard' | 'orders' | 'products' | 'inventory' | 'customers' | 'reports' | 'rbac';
 
 interface Product {
   id: string;
@@ -113,6 +115,8 @@ interface OrderDetail {
   id: string;
   code: string;
   status: string;
+  channel?: string;
+  sales_channel?: string | null;
   customer: { id: string; full_name: string; email: string | null; phone: string | null } | null;
   shipping_address: {
     full_name: string;
@@ -208,6 +212,30 @@ const PIE_FILL_BY_CODE: Record<string, string> = {
   unassigned: '#d1d5db',
 };
 
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  pending:    'Chờ thanh toán',
+  authorized: 'Đã ủy quyền',
+  paid:       'Đã thanh toán',
+  failed:     'Thất bại',
+  refunded:   'Hoàn tiền',
+};
+
+const PAYMENT_STATUS_COLORS: Record<string, string> = {
+  pending:    'bg-orange-50 text-orange-700 border-orange-200',
+  authorized: 'bg-blue-50 text-blue-700 border-blue-200',
+  paid:       'bg-green-50 text-green-700 border-green-200',
+  failed:     'bg-red-50 text-red-700 border-red-200',
+  refunded:   'bg-gray-100 text-gray-600 border-gray-300',
+};
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cod:     'Tiền mặt (COD)',
+  momo:    'MoMo',
+  zalopay: 'ZaloPay',
+  bank:    'Chuyển khoản',
+  card:    'Thẻ',
+};
+
 const ORDER_STATUS_LABELS: Record<string, string> = {
   draft: 'Nháp',
   placed: 'Đã đặt',
@@ -275,6 +303,16 @@ export function VeloraAdminDashboard() {
   const [reportSummary, setReportSummary] = useState<ReportsSummary | null>(null);
   const [reportsLoading, setReportsLoading] = useState(true);
 
+  // RBAC tab
+  type RbacRole = { id: string; code: string; name: string };
+  type RbacUser = { id: string; full_name: string; email: string; phone: string; user_type: string; status: string; roles: RbacRole[] };
+  const [rbacUsers, setRbacUsers] = useState<RbacUser[]>([]);
+  const [rbacRoles, setRbacRoles] = useState<RbacRole[]>([]);
+  const [rbacLoading, setRbacLoading] = useState(false);
+  const [assignTarget, setAssignTarget] = useState<RbacUser | null>(null);
+  const [assignRoleId, setAssignRoleId] = useState('');
+  const [assignSaving, setAssignSaving] = useState(false);
+
   useEffect(() => {
     setProductsLoading(true);
     apiFetch<any[]>('/catalog/products?limit=500')
@@ -312,7 +350,7 @@ export function VeloraAdminDashboard() {
           items: o.items_count ?? 0,
           total: o.total_amount || 0,
           status: o.status || 'placed',
-          channel: 'Website',
+          channel: typeof o.channel === 'string' ? o.channel : 'Chưa gán kênh',
           date: formatDateVN(o.placed_at || o.created_at),
           rawDate: o.placed_at || o.created_at || null,
         }));
@@ -350,20 +388,37 @@ export function VeloraAdminDashboard() {
     reloadReports();
   }, []);
 
+  const reloadRbac = () => {
+    setRbacLoading(true);
+    Promise.all([
+      apiFetch<RbacUser[]>('/admin/rbac/users', { auth: true }).catch(() => []),
+      apiFetch<RbacRole[]>('/admin/rbac/roles', { auth: true }).catch(() => []),
+    ]).then(([users, roles]) => {
+      setRbacUsers(users || []);
+      setRbacRoles(roles || []);
+    }).finally(() => setRbacLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'rbac') reloadRbac();
+  }, [activeTab]);
+
   useEffect(() => {
     setCustomersLoading(true);
     apiFetch<any[]>('/admin/users?limit=200', { auth: true })
       .then((rows) => {
-        const list: Customer[] = (rows || []).map((u: any) => ({
-          id: u.id,
-          name: u.full_name || '—',
-          email: u.email || '',
-          phone: u.phone || '',
-          orders: u.order_count || 0,
-          totalSpent: u.total_spent || 0,
-          joinDate: formatDateVN(u.created_at),
-          status: u.status === 'active' ? 'active' : 'inactive',
-        }));
+        const list: Customer[] = (rows || [])
+          .filter((u: any) => u.user_type === 'customer')
+          .map((u: any) => ({
+            id: u.id,
+            name: u.full_name || '—',
+            email: u.email || '',
+            phone: u.phone || '',
+            orders: u.order_count || 0,
+            totalSpent: u.total_spent || 0,
+            joinDate: formatDateVN(u.created_at),
+            status: u.status === 'active' ? 'active' : 'inactive',
+          }));
         setCustomers(list);
       })
       .catch(() => setCustomers([]))
@@ -589,6 +644,7 @@ export function VeloraAdminDashboard() {
     { icon: Warehouse, label: 'Tồn kho', value: 'inventory' },
     { icon: Users, label: 'Khách hàng', value: 'customers' },
     { icon: BarChart3, label: 'Báo cáo', value: 'reports' },
+    { icon: ShieldCheck, label: 'Phân quyền', value: 'rbac' },
   ];
 
   const Sidebar = ({ mobile = false }: { mobile?: boolean }) => (
@@ -598,7 +654,7 @@ export function VeloraAdminDashboard() {
       } w-full lg:w-64 bg-white border-r border-black flex-col flex-shrink-0 h-full`}
     >
       <div className="p-6 border-b border-border">
-        <img src={logoImg} alt="VELORA" className="h-10 w-auto" />
+        <VeloraLogo size="small" showSubtitle={false} showUnderline={false} />
         <p className="text-xs uppercase tracking-wider mt-2 text-muted-foreground">Admin Dashboard</p>
       </div>
       <nav className="p-4 flex-1">
@@ -700,10 +756,11 @@ export function VeloraAdminDashboard() {
                   const now = new Date();
                   const ymKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                   const monthOrders = orders.filter((o) => (o.rawDate || '').startsWith(ymKey));
-                  const monthRevenue = monthOrders.reduce((s, o) => s + (o.total || 0), 0);
+                  const deliveredMonthOrders = monthOrders.filter((o) => o.status === 'delivered');
+                  const monthRevenue = deliveredMonthOrders.reduce((s, o) => s + (o.total || 0), 0);
                   return [
-                    { label: 'Doanh thu tháng', value: VND(monthRevenue), change: ordersLoading ? 'Đang tải đơn…' : `${monthOrders.length} đơn trong tháng (danh sách đơn)` },
-                    { label: 'Đơn hàng tháng', value: String(monthOrders.length), change: ordersLoading ? '…' : `Tổng ${orders.length} đơn đã load` },
+                    { label: 'Doanh thu tháng', value: VND(monthRevenue), change: ordersLoading ? 'Đang tải đơn…' : `${deliveredMonthOrders.length} đơn đã giao trong tháng` },
+                    { label: 'Đơn hàng tháng', value: String(monthOrders.length), change: ordersLoading ? '…' : `${deliveredMonthOrders.length} đã giao · ${monthOrders.length - deliveredMonthOrders.length} đang xử lý` },
                     {
                       label: 'Người dùng (admin)',
                       value: String(customers.length),
@@ -731,7 +788,7 @@ export function VeloraAdminDashboard() {
               <Card className="velora-card">
                 <CardHeader>
                   <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                    Doanh thu theo kênh (6 tháng — dữ liệu thật){' '}
+                    Doanh thu theo kênh (6 tháng){' '}
                     {reportsLoading && <span className="text-xs font-normal text-muted-foreground">Đang tải…</span>}
                   </CardTitle>
                 </CardHeader>
@@ -758,7 +815,7 @@ export function VeloraAdminDashboard() {
                 <Card className="velora-card lg:col-span-2">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Top sản phẩm (theo đơn thật){' '}
+                      Top sản phẩm{' '}
                       {reportsLoading && <span className="text-xs font-normal text-muted-foreground">Đang tải…</span>}
                     </CardTitle>
                   </CardHeader>
@@ -782,7 +839,7 @@ export function VeloraAdminDashboard() {
                 <Card className="velora-card">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Tỷ lệ doanh thu theo kênh (thật){' '}
+                      Tỷ lệ doanh thu theo kênh{' '}
                       {reportsLoading && <span className="text-xs font-normal text-muted-foreground">Đang tải…</span>}
                     </CardTitle>
                   </CardHeader>
@@ -1023,6 +1080,14 @@ export function VeloraAdminDashboard() {
                             Tạm tính {VND(detail.subtotal_amount)} · Giảm {VND(detail.discount_amount)} · Phí ship {VND(detail.shipping_fee)}
                           </p>
                         </div>
+                        <div className="col-span-2">
+                          <p className="text-xs uppercase text-muted-foreground tracking-wider">Kênh bán</p>
+                          <div className="mt-1">
+                            <Badge variant="outline" className="text-xs">
+                              {detail.channel || '—'}
+                            </Badge>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Địa chỉ giao */}
@@ -1075,6 +1140,35 @@ export function VeloraAdminDashboard() {
                           </TableBody>
                         </Table>
                       </div>
+
+                      {/* Thanh toán */}
+                      {detail.payments && detail.payments.length > 0 && (
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground tracking-wider mb-2">Thanh toán</p>
+                          <div className="space-y-2">
+                            {detail.payments.map((pay) => (
+                              <div key={pay.id} className="flex items-center justify-between border border-border p-3 rounded">
+                                <div className="space-y-0.5">
+                                  <p className="text-sm font-medium">
+                                    {PAYMENT_METHOD_LABELS[pay.method] || pay.method}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {pay.paid_at
+                                      ? `Thanh toán lúc ${new Date(pay.paid_at).toLocaleString('vi-VN')}`
+                                      : 'Chưa thanh toán'}
+                                  </p>
+                                </div>
+                                <div className="text-right space-y-1">
+                                  <p className="text-sm font-semibold">{VND(pay.amount)}</p>
+                                  <span className={`text-xs px-2 py-0.5 rounded border font-medium ${PAYMENT_STATUS_COLORS[pay.status] || 'bg-gray-100 text-gray-600 border-gray-300'}`}>
+                                    {PAYMENT_STATUS_LABELS[pay.status] || pay.status}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Cập nhật trạng thái */}
                       <div className="border border-black p-4 space-y-3">
@@ -1546,7 +1640,7 @@ export function VeloraAdminDashboard() {
                   { label: 'Tổng khách hàng', value: customers.length },
                   { label: 'Khách hoạt động', value: customers.filter(c => c.status === 'active').length },
                   { label: 'Khách mới tháng này', value: 12 },
-                  { label: 'Doanh thu / KH (avg)', value: Math.round(customers.reduce((s, c) => s + c.totalSpent, 0) / customers.length).toLocaleString('vi-VN') + '₫' },
+                  { label: 'Doanh thu / KH (avg)', value: customers.length ? Math.round(customers.reduce((s, c) => s + c.totalSpent, 0) / customers.length).toLocaleString('vi-VN') + '₫' : '0₫' },
                 ].map((stat, i) => (
                   <Card key={i} className="velora-card">
                     <CardContent className="p-4">
@@ -1703,7 +1797,7 @@ export function VeloraAdminDashboard() {
                 <Card className="velora-card">
                   <CardHeader>
                     <CardTitle className="velora-heading" style={{ fontFamily: 'var(--font-heading)' }}>
-                      Doanh thu theo tháng (stack theo kênh — thật)
+                      Doanh thu theo tháng (stack theo kênh)
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -1838,6 +1932,141 @@ export function VeloraAdminDashboard() {
               </div>
             </div>
           )}
+          {/* ──────────────── PHÂN QUYỀN (RBAC) ──────────────── */}
+          {activeTab === 'rbac' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="velora-heading text-lg" style={{ fontFamily: 'var(--font-heading)' }}>Phân quyền nhân viên</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">Gán / thu hồi role cho từng tài khoản</p>
+                </div>
+                <Button variant="outline" className="border-black text-sm" onClick={reloadRbac} disabled={rbacLoading}>
+                  {rbacLoading ? 'Đang tải…' : 'Làm mới'}
+                </Button>
+              </div>
+
+              {/* Chú thích roles */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { code: 'admin',     label: 'Admin',     desc: 'Toàn quyền hệ thống',                           color: 'bg-black text-white' },
+                  { code: 'sales',     label: 'Sales',     desc: 'Xử lý đơn hàng, xem & cập nhật khách hàng',     color: 'bg-blue-600 text-white' },
+                  { code: 'marketing', label: 'Marketing', desc: 'Xem đơn, phân tích khách hàng, quản lý campaign', color: 'bg-purple-600 text-white' },
+                ].map((r) => (
+                  <div key={r.code} className="border border-border rounded p-3 flex gap-3 items-start">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${r.color} shrink-0`}>{r.label}</span>
+                    <p className="text-xs text-muted-foreground">{r.desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bảng users */}
+              <Card className="velora-card">
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nhân viên</TableHead>
+                        <TableHead>Loại tài khoản</TableHead>
+                        <TableHead>Roles hiện tại</TableHead>
+                        <TableHead className="w-[120px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rbacLoading && (
+                        <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground text-sm">Đang tải…</TableCell></TableRow>
+                      )}
+                      {!rbacLoading && rbacUsers.length === 0 && (
+                        <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground text-sm">Chưa có dữ liệu.</TableCell></TableRow>
+                      )}
+                      {rbacUsers.map((u) => (
+                        <TableRow key={u.id}>
+                          <TableCell>
+                            <p className="font-medium text-sm">{u.full_name || '—'}</p>
+                            <p className="text-xs text-muted-foreground">{u.email || u.phone || '—'}</p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs capitalize">{u.user_type}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {u.roles.length === 0 && <span className="text-xs text-muted-foreground">Chưa có role</span>}
+                              {u.roles.map((r) => (
+                                <span key={r.id} className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded bg-black text-white">
+                                  {r.name}
+                                  <button
+                                    className="ml-0.5 opacity-70 hover:opacity-100"
+                                    title="Thu hồi role"
+                                    onClick={async () => {
+                                      if (!confirm(`Thu hồi role "${r.name}" của ${u.full_name}?`)) return;
+                                      await apiFetch(`/admin/rbac/users/${u.id}/roles/${r.id}`, { method: 'DELETE', auth: true });
+                                      toast.success(`Đã thu hồi role ${r.name}`);
+                                      reloadRbac();
+                                    }}
+                                  ><X size={10} /></button>
+                                </span>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Dialog open={assignTarget?.id === u.id} onOpenChange={(o) => { if (!o) setAssignTarget(null); }}>
+                              <DialogTrigger asChild>
+                                <Button size="sm" variant="outline" className="border-black text-xs h-7 gap-1"
+                                  onClick={() => { setAssignTarget(u); setAssignRoleId(''); }}>
+                                  <UserPlus size={12} /> Gán role
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-w-sm">
+                                <DialogHeader>
+                                  <DialogTitle>Gán role — {u.full_name}</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-3 py-2">
+                                  <Label className="text-xs">Chọn role</Label>
+                                  <Select value={assignRoleId} onValueChange={setAssignRoleId}>
+                                    <SelectTrigger className="border-black">
+                                      <SelectValue placeholder="— chọn role —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {rbacRoles
+                                        .filter((r) => !u.roles.some((ur) => ur.id === r.id))
+                                        .map((r) => (
+                                          <SelectItem key={r.id} value={r.id}>{r.name} ({r.code})</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <DialogFooter>
+                                  <Button variant="outline" onClick={() => setAssignTarget(null)}>Hủy</Button>
+                                  <Button
+                                    className="bg-black text-white"
+                                    disabled={!assignRoleId || assignSaving}
+                                    onClick={async () => {
+                                      if (!assignTarget || !assignRoleId) return;
+                                      setAssignSaving(true);
+                                      try {
+                                        await apiFetch(`/admin/rbac/users/${assignTarget.id}/roles/${assignRoleId}`, { method: 'POST', auth: true });
+                                        toast.success('Đã gán role thành công');
+                                        setAssignTarget(null);
+                                        reloadRbac();
+                                      } catch {
+                                        toast.error('Gán role thất bại');
+                                      } finally {
+                                        setAssignSaving(false);
+                                      }
+                                    }}
+                                  >{assignSaving ? 'Đang lưu…' : 'Gán'}</Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
         </main>
       </div>
     </div>

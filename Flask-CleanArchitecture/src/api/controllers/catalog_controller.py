@@ -1,14 +1,53 @@
 from __future__ import annotations
 
+import os
+
 from flask import Blueprint, jsonify, request, g
+from sqlalchemy import select
 
 from api.auth import require_auth, require_function
 from domain.constants import FunctionCodes
 from infrastructure.databases.session import session_scope
+from infrastructure.models.inventory_models import InventoryLocationModel, StockItemModel
 from infrastructure.repositories.catalog_repository import CatalogRepository
 from services.catalog_service import CatalogService
 
 bp = Blueprint("catalog", __name__, url_prefix="/catalog")
+
+
+def _stock_map(session) -> dict[str, int] | None:
+    """Return {variant_id_str: qty_on_hand} for the main warehouse.
+
+    Returns None when inventory is not configured at all (location missing),
+    so callers can distinguish "not configured" from "configured but qty=0".
+    """
+    loc_code = os.environ.get("DEFAULT_INVENTORY_LOCATION_CODE", "main_warehouse")
+    loc = session.execute(
+        select(InventoryLocationModel).where(InventoryLocationModel.code == loc_code)
+    ).scalar_one_or_none()
+    if not loc:
+        return None
+    rows = session.execute(
+        select(StockItemModel).where(StockItemModel.location_id == loc.id)
+    ).scalars().all()
+    return {str(r.variant_id): int(r.qty_on_hand or 0) for r in rows}
+
+
+def _variant_stock(stock: dict[str, int] | None, variant_id: str) -> tuple[bool, int | None]:
+    """Return (in_stock, qty_on_hand) for a variant.
+
+    Logic:
+    - stock is None  → kho chưa cấu hình → in_stock=True, qty=None
+    - variant KHÔNG có bản ghi → chưa nhập kho → in_stock=True, qty=None (không chặn oan)
+    - variant có bản ghi qty=0 → hết hàng → in_stock=False
+    - variant có bản ghi qty>0 → còn hàng → in_stock=True
+    """
+    if stock is None:
+        return True, None
+    qty = stock.get(variant_id)
+    if qty is None:
+        return True, None  # chưa nhập kho → không chặn
+    return qty > 0, qty
 
 
 @bp.get("/categories")
@@ -43,6 +82,7 @@ def list_products():
     with session_scope() as session:
         svc = CatalogService(CatalogRepository(session))
         items = svc.list_products(limit=limit, offset=offset)
+        stock = _stock_map(session)
         return jsonify(
             [
                 {
@@ -66,6 +106,7 @@ def list_products():
                             "size": v.size,
                             "color": v.color,
                             "price": int(v.price),
+                            **dict(zip(("in_stock", "qty_on_hand"), _variant_stock(stock, str(v.id)))),
                         }
                         for v in (p.variants or [])
                     ],
@@ -83,6 +124,7 @@ def get_product(product_id: str):
             p, variants, images, tags = svc.get_product_detail(product_id)
         except ValueError as e:
             return jsonify({"message": str(e)}), 404
+        stock = _stock_map(session)
         return jsonify(
             {
                 "id": str(p.id),
@@ -103,7 +145,9 @@ def get_product(product_id: str):
                         "variant_sku": v.variant_sku,
                         "size": v.size,
                         "color": v.color,
-                        "price": v.price,
+                        "price": int(v.price),
+                        "in_stock": _variant_stock(stock, str(v.id))[0],
+                        "qty_on_hand": _variant_stock(stock, str(v.id))[1],
                     }
                     for v in variants
                 ],

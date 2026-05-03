@@ -21,3 +21,20 @@ def reports_summary():
         svc = ReportsService(ReportsRepository(session))
         data = svc.dashboard_summary(months_back=months)
         return jsonify(data)
+
+
+@bp.get("/customer-behavior")
+@require_auth
+@require_function(FunctionCodes.CUSTOMER_READ)
+def customer_behavior():
+    """Phân tích hành vi khách hàng — dành cho marketing.
+
+    Trả về:
+    - customers: danh sách khách với RFM cơ bản (recency, frequency, monetary)
+    - segments: phân khúc khách hàng (mới, trung thành, có nguy cơ rời bỏ…)
+    - top_products_by_buyers: sản phẩm được nhiều khách mua nhất
+    """
+    with session_scope() as session:
+        svc = ReportsService(ReportsRepository(session))
+        data = svc.customer_behavior_report()
+        return jsonify(data)

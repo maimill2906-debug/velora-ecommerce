@@ -84,6 +84,30 @@ class RbacRepository:
             .all()
         )
 
+    def list_user_roles(self, user_id: uuid.UUID) -> list[RoleModel]:
+        rows = (
+            self.session.execute(
+                select(RoleModel)
+                .join(UserRoleModel, UserRoleModel.role_id == RoleModel.id)
+                .where(UserRoleModel.user_id == user_id)
+                .order_by(RoleModel.code)
+            )
+            .scalars()
+            .all()
+        )
+        return list(rows)
+
+    def remove_role_from_user(self, user_id: uuid.UUID, role_id: uuid.UUID) -> bool:
+        link = self.session.execute(
+            select(UserRoleModel)
+            .where(UserRoleModel.user_id == user_id)
+            .where(UserRoleModel.role_id == role_id)
+        ).scalar_one_or_none()
+        if not link:
+            return False
+        self.session.delete(link)
+        return True
+
     def assign_role_to_user(self, user_id: uuid.UUID, role_id: uuid.UUID) -> None:
         link = UserRoleModel(user_id=user_id, role_id=role_id)
         self.session.add(link)
